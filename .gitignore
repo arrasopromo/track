@@ -1,0 +1,23 @@
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# Build/coverage/cache
+coverage/
+dist/
+.tmp/
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env and secrets
+.env
+.env.*
+*.crt
+*.pem
+
+# Misc
+*.map

@@ -1,0 +1,6 @@
+{
+  "event_name": "whatsapp_click",
+  "event_id": "evt-test-1",
+  "client_ref": "10323",
+  "session_id": "sid.test"
+}

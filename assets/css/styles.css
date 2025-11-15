@@ -1,0 +1,6 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; color: #111; background: #fff; }
+.viewport { height: 100vh; display: flex; align-items: center; justify-content: center; }
+.loading { width: 48px; height: 48px; border-radius: 50%; border: 4px solid #000; border-top-color: transparent; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
