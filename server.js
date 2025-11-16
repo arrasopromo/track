@@ -261,6 +261,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Webhook: track-cliente → captura client_ref/id e associa telefone
+  if (pathname === '/webhook/track-cliente' && req.method === 'GET') {
+    return sendJson(res, 200, {
+      ok: true,
+      hint: 'Use POST application/json',
+      example: { id: '23057', from: '+5511999999999', text: 'cliente#23057' }
+    });
+  }
+
   if (pathname === '/webhook/track-cliente' && req.method === 'POST') {
     try {
       const body = await readJson(req);
