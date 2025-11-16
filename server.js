@@ -260,6 +260,49 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Webhook: track-cliente → captura client_ref/id e associa telefone
+  if (pathname === '/webhook/track-cliente' && req.method === 'POST') {
+    try {
+      const body = await readJson(req);
+      const server_ip = getIpFromHeaders(req);
+      const now = new Date();
+
+      const text = String(body.text || body.message || '');
+      const from = String(body.from || body.phone || '').replace(/[^0-9+]/g, '');
+      let client_ref = null;
+
+      if (body.id != null) client_ref = String(body.id);
+      else if (body.client_ref != null) client_ref = String(body.client_ref);
+      else {
+        const m = text.match(/cliente#([A-Za-z0-9_-]+)/i);
+        client_ref = m ? m[1] : null;
+      }
+
+      if (db) {
+        await db.collection('messages').insertOne({
+          type: 'track-cliente',
+          text,
+          from,
+          client_ref,
+          server_ip,
+          payload: body,
+          createdAt: now
+        });
+        if (client_ref) {
+          await db.collection('sessions').updateMany(
+            { client_ref },
+            { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
+          );
+        }
+      }
+      sendJson(res, 200, { ok: true, client_ref, from });
+    } catch (e) {
+      console.error('[webhook/track-cliente] error', e);
+      sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+    return;
+  }
+
   // Webhook: pagamento → salva compra e tenta vincular a sessão
   if (pathname === '/webhook/payment' && req.method === 'POST') {
     try {
