@@ -120,7 +120,26 @@ function readJson(req) {
     let data = '';
     req.on('data', chunk => { data += chunk; if (data.length > 1e6) req.destroy(); });
     req.on('end', () => {
-      try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); }
+      try {
+        if (!data) return resolve({});
+        const ct = String(req.headers['content-type'] || '').toLowerCase();
+        if (ct.includes('application/json')) {
+          return resolve(JSON.parse(data));
+        }
+        if (ct.includes('application/x-www-form-urlencoded')) {
+          const params = new URLSearchParams(data);
+          const obj = {};
+          for (const [k, v] of params.entries()) obj[k] = v;
+          return resolve(obj);
+        }
+        // Fallback: tenta JSON, senão interpreta como urlencoded
+        try { return resolve(JSON.parse(data)); } catch (_) {
+          const params = new URLSearchParams(data);
+          const obj = {};
+          for (const [k, v] of params.entries()) obj[k] = v;
+          return resolve(obj);
+        }
+      } catch (e) { reject(e); }
     });
     req.on('error', reject);
   });
@@ -232,9 +251,11 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const server_ip = getIpFromHeaders(req);
       const text = String(body.text || body.message || '');
-      const from = String(body.from || body.phone || '').replace(/[^0-9+]/g, '');
+      const rawFrom = body.from || body.phone || body.tel || body.telefone || '';
+      const from = String(rawFrom).replace(/[^0-9+]/g, '');
       const mCliente = text.match(/cliente#([A-Za-z0-9_-]+)/i);
-      const client_ref = mCliente ? mCliente[1] : (body.client_ref || null);
+      const rawClientRef = mCliente ? mCliente[1] : (body.client_ref || body.idcliente || body.id || null);
+      const client_ref = (rawClientRef !== null && rawClientRef !== undefined) ? String(rawClientRef) : null;
       const now = new Date();
 
       if (db) {
