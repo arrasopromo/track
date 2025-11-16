@@ -64,20 +64,52 @@ async function initMongo() {
   // Seed do contador global de client_ref, evitando conflito de operadores
   try {
     const now = new Date();
+    // Cria seed apenas se não existir
     await db.collection('counters').updateOne(
       { _id: 'global:client_ref' },
       { $setOnInsert: { seq: CLIENT_REF_SEED, createdAt: now } },
       { upsert: true }
     );
+
+    // Lê o valor atual do contador
+    const current = await db.collection('counters').findOne({ _id: 'global:client_ref' });
+    const currentSeq = current && typeof current.seq === 'number' ? current.seq : CLIENT_REF_SEED;
+
+    // Descobre o maior client_ref já salvo nas sessões (apenas números)
+    let maxSessionRef = null;
+    try {
+      const agg = await db.collection('sessions').aggregate([
+        { $match: { client_ref: { $exists: true, $ne: null } } },
+        { $project: { n: { $convert: { input: '$client_ref', to: 'int', onError: null, onNull: null } } } },
+        { $match: { n: { $ne: null } } },
+        { $group: { _id: null, max: { $max: '$n' } } }
+      ]).toArray();
+      if (agg && agg.length && typeof agg[0].max === 'number') {
+        maxSessionRef = agg[0].max;
+      }
+    } catch (e) {
+      console.warn('[Mongo] Falha ao calcular max client_ref em sessions:', e && e.message ? e.message : e);
+    }
+
+    const targetSeq = Math.max(CLIENT_REF_SEED, currentSeq, maxSessionRef || CLIENT_REF_SEED);
+
     if (CLIENT_REF_FORCE) {
+      // Em modo FORCE, nunca reduzir: ajusta para o maior valor conhecido
       await db.collection('counters').updateOne(
         { _id: 'global:client_ref' },
-        { $set: { seq: CLIENT_REF_SEED } },
+        { $set: { seq: targetSeq } },
         { upsert: true }
       );
-      console.log('[Mongo] FORCE global:client_ref =>', CLIENT_REF_SEED);
+      console.log('[Mongo] FORCE global:client_ref =>', targetSeq);
+    } else if (currentSeq < targetSeq) {
+      // Sem FORCE, somente corrige para frente se necessário
+      await db.collection('counters').updateOne(
+        { _id: 'global:client_ref' },
+        { $set: { seq: targetSeq } }
+      );
+      console.log('[Mongo] Ajuste global:client_ref =>', targetSeq, '(antes:', currentSeq, ')');
     } else {
-      console.log('[Mongo] Seed global:client_ref =>', CLIENT_REF_SEED);
+      console.log('[Mongo] Seed global:client_ref =>', CLIENT_REF_SEED, '(atual:', currentSeq, ', maxSessions:', maxSessionRef, ')');
     }
   } catch (e) {
     console.warn('[Mongo] Seed global:client_ref falhou:', e && e.message ? e.message : e);
