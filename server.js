@@ -222,6 +222,32 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (pathname === '/api/client-ref-stats' && req.method === 'GET') {
+    try {
+      if (!db) return sendJson(res, 400, { ok: false, error: 'MongoDB não configurado (MONGO_URI ausente)' });
+      const counter = await db.collection('counters').findOne({ _id: 'global:client_ref' });
+      const currentSeq = counter && typeof counter.seq === 'number' ? counter.seq : null;
+      let maxSessionRef = null;
+      let sessionsCount = null;
+      try {
+        const agg = await db.collection('sessions').aggregate([
+          { $match: { client_ref: { $exists: true, $ne: null } } },
+          { $project: { n: { $convert: { input: '$client_ref', to: 'int', onError: null, onNull: null } } } },
+          { $match: { n: { $ne: null } } },
+          { $group: { _id: null, max: { $max: '$n' }, count: { $sum: 1 } } }
+        ]).toArray();
+        if (agg && agg.length) {
+          maxSessionRef = typeof agg[0].max === 'number' ? agg[0].max : null;
+          sessionsCount = typeof agg[0].count === 'number' ? agg[0].count : null;
+        }
+      } catch (e) {}
+      return sendJson(res, 200, { ok: true, currentSeq, maxSessionRef, sessionsCount });
+    } catch (e) {
+      console.error('[api/client-ref-stats] error', e);
+      return sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+  }
+
   // API: salvar sessão de clique (com número sequencial por cliente)
   if (pathname === '/api/track' && req.method === 'POST') {
     try {
@@ -299,10 +325,22 @@ const server = http.createServer(async (req, res) => {
           createdAt: now
         });
         if (client_ref) {
-          await db.collection('sessions').updateMany(
-            { client_ref },
-            { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
-          );
+          const existing = await db.collection('sessions').findOne({ client_ref });
+          if (existing) {
+            await db.collection('sessions').updateMany(
+              { client_ref },
+              { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
+            );
+          } else {
+            await db.collection('sessions').insertOne({
+              client_ref,
+              user_phone: from,
+              whatsapp_received_at: now,
+              last_message_text: text,
+              server_ip,
+              createdAt: now
+            });
+          }
         }
       }
       sendJson(res, 200, { ok: true, client_ref, from });
@@ -350,10 +388,22 @@ const server = http.createServer(async (req, res) => {
           createdAt: now
         });
         if (client_ref) {
-          await db.collection('sessions').updateMany(
-            { client_ref },
-            { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
-          );
+          const existing = await db.collection('sessions').findOne({ client_ref });
+          if (existing) {
+            await db.collection('sessions').updateMany(
+              { client_ref },
+              { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
+            );
+          } else {
+            await db.collection('sessions').insertOne({
+              client_ref,
+              user_phone: from,
+              whatsapp_received_at: now,
+              last_message_text: text,
+              server_ip,
+              createdAt: now
+            });
+          }
         }
       }
       sendJson(res, 200, { ok: true, client_ref, from });
