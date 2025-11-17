@@ -199,6 +199,13 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
+function normalizeIp(ip) {
+  if (!ip) return null;
+  const s = String(ip).trim();
+  const m = s.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+  return m ? m[1] : null;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = url.pathname;
@@ -663,13 +670,14 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const fbc = (sess && sess.fbc) || null;
     const phone = (sess && sess.user_phone) ? String(sess.user_phone).replace(/[^0-9+]/g, '') : null;
     const ph = phone ? sha256Hex(phone) : null;
+    const ip = normalizeIp(server_ip || (sess && sess.server_ip)) || '8.8.8.8';
     const evt = stripNulls({
       event_name: 'PageView',
       event_id: (sess && sess.event_id) || undefined,
       event_time: Math.floor(Date.now() / 1000),
       action_source: 'website',
       event_source_url,
-      client_ip_address: server_ip || null,
+      client_ip_address: ip,
       client_user_agent: user_agent || null,
       fbc,
       fbp,
@@ -708,13 +716,14 @@ async function sendMetaContactFromSession(sess, server_ip) {
       session_id: sess.session_id || null,
       client_ref: sess.client_ref || null
     });
+    const ip2 = normalizeIp(server_ip || sess.server_ip) || '8.8.8.8';
     const evt2 = stripNulls({
       event_name: 'Contact',
       event_id: sess.event_id || undefined,
       event_time,
       action_source: 'website',
       event_source_url,
-      client_ip_address: server_ip || sess.server_ip || null,
+      client_ip_address: ip2,
       client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
       fbc: sess.fbc || null,
       fbp: sess.fbp || null,
