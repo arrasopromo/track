@@ -608,6 +608,10 @@ const server = http.createServer(async (req, res) => {
       const addInfo = Array.isArray(charge.additionalInfo) ? charge.additionalInfo : [];
       const rawPhone = customer.phone || (addInfo.find(x => String(x.key).toLowerCase() === 'telefone') || {}).value || null;
       const phone = rawPhone ? String(rawPhone).replace(/[^0-9]/g, '') : null;
+      const clientRefInfo = (addInfo.find(x => String(x.key).toLowerCase() === 'cliente') || {}).value || null;
+      const client_ref = clientRefInfo != null ? String(clientRefInfo) : null;
+      const clientRefInfo = (addInfo.find(x => String(x.key).toLowerCase() === 'cliente') || {}).value || null;
+      const client_ref = clientRefInfo != null ? String(clientRefInfo) : null;
 
       const valueCents = Number(charge.value != null ? charge.value : (charge.paymentMethods && charge.paymentMethods.pix && charge.paymentMethods.pix.value != null ? charge.paymentMethods.pix.value : 0));
       const value = Number((valueCents / 100).toFixed(2));
@@ -630,6 +634,7 @@ const server = http.createServer(async (req, res) => {
         paymentLinkUrl: charge.paymentLinkUrl || null,
         pixKey: charge.pixKey || null,
         brCode: charge.brCode || null,
+        client_ref,
         additionalInfo: addInfo,
         server_ip,
         createdAt: now,
@@ -643,17 +648,20 @@ const server = http.createServer(async (req, res) => {
           { upsert: true }
         );
 
-        if (phone) {
-          const sess = await db.collection('sessions').findOne({ user_phone: phone });
+        const sessQuery = client_ref ? { client_ref } : (phone ? { $or: [ { user_phone: phone }, { user_phone: `+${phone}` } ] } : null);
+        if (sessQuery) {
+          const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
-            await db.collection('sessions').updateMany(
-              { user_phone: phone },
-              { $set: { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity } }
-            );
+            if (client_ref) {
+              await db.collection('sessions').updateOne({ client_ref }, { $set: { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity } });
+            } else {
+              await db.collection('sessions').updateMany(sessQuery, { $set: { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity } });
+            }
             await sendMetaInitiateCheckout(sess, server_ip, { value, quantity, charge });
           } else {
             await db.collection('sessions').insertOne({
-              user_phone: phone,
+              user_phone: phone || null,
+              client_ref: client_ref || null,
               last_initiate_checkout_at: now,
               last_charge_identifier: chargeDoc.identifier,
               last_charge_value: value,
@@ -661,13 +669,13 @@ const server = http.createServer(async (req, res) => {
               server_ip,
               createdAt: now
             });
-            const minimalSess = { user_phone: phone, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
+            const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
             await sendMetaInitiateCheckout(minimalSess, server_ip, { value, quantity, charge });
           }
         }
       }
 
-      return sendJson(res, 200, { ok: true, phone: rawPhone || null, value, quantity, capi: { initiate: LAST_CAPI.initiate } });
+      return sendJson(res, 200, { ok: true, phone: rawPhone || null, client_ref: client_ref || null, value, quantity, capi: { initiate: LAST_CAPI.initiate } });
     } catch (e) {
       console.error('[webhook/validar-criado] error', e);
       return sendJson(res, 400, { ok: false, error: String(e.message || e) });
@@ -711,6 +719,7 @@ const server = http.createServer(async (req, res) => {
         paymentLinkUrl: charge.paymentLinkUrl || null,
         pixKey: charge.pixKey || null,
         brCode: charge.brCode || null,
+        client_ref,
         additionalInfo: addInfo,
         paidAt: charge.paidAt || null,
         server_ip,
@@ -725,17 +734,20 @@ const server = http.createServer(async (req, res) => {
           { upsert: true }
         );
 
-        if (phone) {
-          const sess = await db.collection('sessions').findOne({ user_phone: phone });
+        const sessQuery = client_ref ? { client_ref } : (phone ? { $or: [ { user_phone: phone }, { user_phone: `+${phone}` } ] } : null);
+        if (sessQuery) {
+          const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
-            await db.collection('sessions').updateMany(
-              { user_phone: phone },
-              { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity } }
-            );
+            if (client_ref) {
+              await db.collection('sessions').updateOne({ client_ref }, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity } });
+            } else {
+              await db.collection('sessions').updateMany(sessQuery, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity } });
+            }
             await sendMetaPurchase(sess, server_ip, { value, quantity, charge });
           } else {
             await db.collection('sessions').insertOne({
-              user_phone: phone,
+              user_phone: phone || null,
+              client_ref: client_ref || null,
               last_purchase_at: now,
               last_purchase_status: chargeDoc.status,
               last_purchase_value: value,
@@ -744,13 +756,13 @@ const server = http.createServer(async (req, res) => {
               server_ip,
               createdAt: now
             });
-            const minimalSess = { user_phone: phone, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
+            const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
             await sendMetaPurchase(minimalSess, server_ip, { value, quantity, charge });
           }
         }
       }
 
-      return sendJson(res, 200, { ok: true, phone: rawPhone || null, value, quantity, capi: { purchase: LAST_CAPI.purchase } });
+      return sendJson(res, 200, { ok: true, phone: rawPhone || null, client_ref: client_ref || null, value, quantity, capi: { purchase: LAST_CAPI.purchase } });
     } catch (e) {
       console.error('[webhook/validar-confirmado] error', e);
       return sendJson(res, 400, { ok: false, error: String(e.message || e) });
