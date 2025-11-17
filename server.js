@@ -620,7 +620,7 @@ initMongo().then(() => {
 
 
 function postToMetaEvents(payload) {
-  if (!PIXEL_ID || !META_CAPI_TOKEN) return Promise.resolve(null);
+  if (!PIXEL_ID || !META_CAPI_TOKEN) return Promise.resolve({ status: null, body: 'PIXEL_ID or META_CAPI_TOKEN missing' });
   const url = new URL(`https://graph.facebook.com/v19.0/${PIXEL_ID}/events?access_token=${encodeURIComponent(META_CAPI_TOKEN)}`);
   return new Promise((resolve, reject) => {
     const req = https.request({ hostname: url.hostname, path: url.pathname + url.search, method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => {
@@ -636,8 +636,8 @@ function postToMetaEvents(payload) {
 
 async function sendPixelPageView({ client_ref, server_ip }) {
   try {
-    if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); return; }
-    if (!META_CAPI_TOKEN) { console.warn('[meta] PageView skipped: META_CAPI_TOKEN missing'); return; }
+    if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); LAST_CAPI.pageview = { status: null, body: 'PIXEL_ID missing' }; return; }
+    if (!META_CAPI_TOKEN) { console.warn('[meta] PageView skipped: META_CAPI_TOKEN missing'); LAST_CAPI.pageview = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
     let sess = null;
     if (client_ref && db) sess = await db.collection('sessions').findOne({ client_ref });
     const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
@@ -656,7 +656,8 @@ async function sendPixelPageView({ client_ref, server_ip }) {
 
 async function sendMetaContactFromSession(sess, server_ip) {
   try {
-    if (!PIXEL_ID || !META_CAPI_TOKEN) return;
+    if (!PIXEL_ID) { console.warn('[meta] Contact skipped: PIXEL_ID missing'); LAST_CAPI.contact = { status: null, body: 'PIXEL_ID missing' }; return; }
+    if (!META_CAPI_TOKEN) { console.warn('[meta] Contact skipped: META_CAPI_TOKEN missing'); LAST_CAPI.contact = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
     const event_source_url = sess.event_source_url || sess.page_url || 'https://track.agenciaoppus.site/';
     const payload = {
