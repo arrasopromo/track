@@ -610,8 +610,6 @@ const server = http.createServer(async (req, res) => {
       const phone = rawPhone ? String(rawPhone).replace(/[^0-9]/g, '') : null;
       const clientRefInfo = (addInfo.find(x => String(x.key).toLowerCase() === 'cliente') || {}).value || null;
       const client_ref = clientRefInfo != null ? String(clientRefInfo) : null;
-      const clientRefInfo = (addInfo.find(x => String(x.key).toLowerCase() === 'cliente') || {}).value || null;
-      const client_ref = clientRefInfo != null ? String(clientRefInfo) : null;
 
       const valueCents = Number(charge.value != null ? charge.value : (charge.paymentMethods && charge.paymentMethods.pix && charge.paymentMethods.pix.value != null ? charge.paymentMethods.pix.value : 0));
       const value = Number((valueCents / 100).toFixed(2));
