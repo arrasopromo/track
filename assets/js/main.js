@@ -21,6 +21,25 @@
     }) + '-' + ts + '-' + rnd;
   }
 
+  function ensurePixel(id) {
+    if (!id) return;
+    if (!window.fbq) {
+      var n = function(){ n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments) };
+      window.fbq = n;
+      if (!window._fbq) window._fbq = n;
+      n.push = n;
+      n.loaded = true;
+      n.version = '2.0';
+      n.queue = [];
+      var t = document.createElement('script');
+      t.async = true;
+      t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+      var s = document.getElementsByTagName('script')[0];
+      s.parentNode.insertBefore(t, s);
+    }
+    try { window.fbq('init', id); } catch (e) {}
+  }
+
   function waLink(phone, message) {
     var clean = (phone || '').replace(/[^0-9]/g, '');
     return 'https://wa.me/' + clean + '?text=' + encodeURIComponent(message || '');
@@ -106,7 +125,9 @@
     var phone = (btn && btn.dataset.whatsapp) || cfg.defaultWhatsAppPhone || '';
     var baseMsg = cfg.defaultMessage || ''; // force fixed message from config
     var data = window.tracking && window.tracking.getTrackingData ? window.tracking.getTrackingData() : {};
+    ensurePixel(cfg.pixelId);
     var eventId = uuid();
+    if (window.fbq) { try { window.fbq('track', 'PageView', { eventID: eventId }); window.fbq('track', 'Contact', { eventID: eventId }); } catch (e) {} }
     if (window.fbq) { try { window.fbq('track', 'PageView', { eventID: eventId }); window.fbq('track', 'Contact', { eventID: eventId }); } catch (e) {} }
 
     function ensureClientRefFirst() {
@@ -159,6 +180,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     var cfg = window.TRACK_CONFIG || {};
     if (window.tracking && window.tracking.ensureMetaCookies) window.tracking.ensureMetaCookies();
+    ensurePixel(cfg.pixelId);
 
     var btn = document.getElementById('whatsapp-cta');
     if (btn) {

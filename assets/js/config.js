@@ -4,4 +4,5 @@ window.TRACK_CONFIG = {
   defaultMessage: 'abc',
   appendUtmToMessage: false,
   autoRedirectOnLoad: true,
+  pixelId: '1019661457030791'
 };
