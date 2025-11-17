@@ -370,16 +370,14 @@ const server = http.createServer(async (req, res) => {
           server_ip,
           createdAt: now
         });
-        let triggerSend = false;
+        let triggerSend = !!client_ref;
         if (client_ref) {
           const existing = await db.collection('sessions').findOne({ client_ref });
           if (existing) {
-            const changed = String(existing.user_phone || '') !== String(from || '');
             await db.collection('sessions').updateMany(
               { client_ref },
               { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
             );
-            triggerSend = changed;
           } else {
             await db.collection('sessions').insertOne({
               client_ref,
@@ -389,17 +387,18 @@ const server = http.createServer(async (req, res) => {
               server_ip,
               createdAt: now
             });
-            triggerSend = true;
           }
         }
       }
       try {
         if (triggerSend) {
           await sendPixelPageView({ client_ref, server_ip });
-          if (client_ref && db) {
-            const sess = await db.collection('sessions').findOne({ client_ref });
-            if (sess) await sendMetaContactFromSession(sess, server_ip);
+          let sess = null;
+          if (client_ref && db) sess = await db.collection('sessions').findOne({ client_ref });
+          if (!sess) {
+            sess = { client_ref, event_source_url: 'https://track.agenciaoppus.site/', user_agent: null, fbc: null, fbp: null, session_id: null, event_id: null, timestamp: now.toISOString(), server_ip };
           }
+          await sendMetaContactFromSession(sess, server_ip);
         }
       } catch (_) {}
       sendJson(res, 200, { ok: true, client_ref, from });
@@ -446,16 +445,14 @@ const server = http.createServer(async (req, res) => {
           payload: body,
           createdAt: now
         });
-        let triggerSend2 = false;
+        let triggerSend2 = !!client_ref;
         if (client_ref) {
           const existing = await db.collection('sessions').findOne({ client_ref });
           if (existing) {
-            const changed = String(existing.user_phone || '') !== String(from || '');
             await db.collection('sessions').updateMany(
               { client_ref },
               { $set: { user_phone: from, whatsapp_received_at: now, last_message_text: text } }
             );
-            triggerSend2 = changed;
           } else {
             await db.collection('sessions').insertOne({
               client_ref,
@@ -465,17 +462,18 @@ const server = http.createServer(async (req, res) => {
               server_ip,
               createdAt: now
             });
-            triggerSend2 = true;
           }
         }
       }
       try {
         if (triggerSend2) {
           await sendPixelPageView({ client_ref, server_ip });
-          if (client_ref && db) {
-            const sess = await db.collection('sessions').findOne({ client_ref });
-            if (sess) await sendMetaContactFromSession(sess, server_ip);
+          let sess = null;
+          if (client_ref && db) sess = await db.collection('sessions').findOne({ client_ref });
+          if (!sess) {
+            sess = { client_ref, event_source_url: 'https://track.agenciaoppus.site/', user_agent: null, fbc: null, fbp: null, session_id: null, event_id: null, timestamp: now.toISOString(), server_ip };
           }
+          await sendMetaContactFromSession(sess, server_ip);
         }
       } catch (_) {}
       sendJson(res, 200, { ok: true, client_ref, from });
