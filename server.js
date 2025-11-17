@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { MongoClient } = require('mongodb');
+const https = require('https');
 
 // Load .env file variables (simple parser)
 const ENV_PATH = path.resolve(__dirname, '.env');
@@ -343,6 +344,7 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
+      await sendPixelPageView({ client_ref, server_ip });
       sendJson(res, 200, { ok: true, client_ref, from });
     } catch (e) {
       console.error('[webhook/botconversa] error', e);
@@ -406,6 +408,7 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
+      await sendPixelPageView({ client_ref, server_ip });
       sendJson(res, 200, { ok: true, client_ref, from });
     } catch (e) {
       console.error('[webhook/track-cliente] error', e);
@@ -498,3 +501,37 @@ initMongo().then(() => {
     console.log(`Server running at http://localhost:${PORT}/ (sem MongoDB)`);
   });
 });
+
+
+function postToMetaEvents(payload) {
+  if (!PIXEL_ID || !META_CAPI_TOKEN) return Promise.resolve(null);
+  const url = new URL(`https://graph.facebook.com/v19.0/${PIXEL_ID}/events?access_token=${encodeURIComponent(META_CAPI_TOKEN)}`);
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: url.hostname, path: url.pathname + url.search, method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => { resolve({ status: res.statusCode, body: data }); });
+    });
+    req.on('error', (err) => reject(err));
+    try { req.write(JSON.stringify(payload)); } catch (e) { /* noop */ }
+    req.end();
+  });
+}
+
+async function sendPixelPageView({ client_ref, server_ip }) {
+  try {
+    if (!PIXEL_ID || !META_CAPI_TOKEN || !db) return;
+    let sess = null;
+    if (client_ref) sess = await db.collection('sessions').findOne({ client_ref });
+    const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
+    const user_agent = (sess && sess.user_agent) || null;
+    const fbp = (sess && sess.fbp) || null;
+    const fbc = (sess && sess.fbc) || null;
+    const payload = { data: [{ event_name: 'PageView', event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
+    if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
+    const resp = await postToMetaEvents(payload);
+    if (resp) console.log('[meta] PageView sent', resp.status);
+  } catch (e) {
+    console.warn('[meta] PageView failed', e && e.message ? e.message : e);
+  }
+}
