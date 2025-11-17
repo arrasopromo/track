@@ -54,7 +54,7 @@ const MIME = {
 
 let mongoClient = null;
 let db = null;
-let LAST_CAPI = { pageview: null, contact: null };
+let LAST_CAPI = { pageview: null, contact: null, initiate: null };
 
 async function initMongo() {
   if (!MONGO_URI) {
@@ -592,6 +592,88 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Webhook: Woovi/OpenPix - charge created → atribui ao user_phone e dispara InitiateCheckout
+  if (pathname === '/webhook/validar-criado' && req.method === 'GET') {
+    return sendJson(res, 404, { code: 404, message: 'This webhook is not registered for GET requests. Did you mean to make a POST request?' });
+  }
+
+  if (pathname === '/webhook/validar-criado' && req.method === 'POST') {
+    try {
+      const body = await readJson(req);
+      const server_ip = getIpFromHeaders(req);
+      const now = new Date();
+
+      const charge = body && body.charge ? body.charge : {};
+      const customer = charge && charge.customer ? charge.customer : {};
+      const addInfo = Array.isArray(charge.additionalInfo) ? charge.additionalInfo : [];
+      const rawPhone = customer.phone || (addInfo.find(x => String(x.key).toLowerCase() === 'telefone') || {}).value || null;
+      const phone = rawPhone ? String(rawPhone).replace(/[^0-9]/g, '') : null;
+
+      const valueCents = Number(charge.value != null ? charge.value : (charge.paymentMethods && charge.paymentMethods.pix && charge.paymentMethods.pix.value != null ? charge.paymentMethods.pix.value : 0));
+      const value = Number((valueCents / 100).toFixed(2));
+      const quantityStr = (addInfo.find(x => String(x.key).toLowerCase() === 'quantidade') || {}).value || null;
+      const quantity = quantityStr ? Number(String(quantityStr).replace(/[^0-9]/g, '')) || 1 : 1;
+
+      const chargeDoc = {
+        type: 'OPENPIX:CHARGE_CREATED',
+        event: body.event || 'OPENPIX:CHARGE_CREATED',
+        identifier: charge.identifier || charge.transactionID || null,
+        transaction_id: charge.transactionID || charge.identifier || null,
+        correlation_id: charge.correlationID || (customer && customer.correlationID) || null,
+        customer_name: customer.name || null,
+        customer_phone: rawPhone || null,
+        value_cents: valueCents,
+        value,
+        comment: charge.comment || null,
+        status: charge.status || null,
+        paymentLinkID: charge.paymentLinkID || null,
+        paymentLinkUrl: charge.paymentLinkUrl || null,
+        pixKey: charge.pixKey || null,
+        brCode: charge.brCode || null,
+        additionalInfo: addInfo,
+        server_ip,
+        createdAt: now,
+        payload: body
+      };
+
+      if (db) {
+        await db.collection('charges').updateOne(
+          { identifier: chargeDoc.identifier || chargeDoc.transaction_id || `${Date.now()}-${Math.random()}` },
+          { $set: chargeDoc, $setOnInsert: { insertedAt: now } },
+          { upsert: true }
+        );
+
+        if (phone) {
+          const sess = await db.collection('sessions').findOne({ user_phone: phone });
+          if (sess) {
+            await db.collection('sessions').updateMany(
+              { user_phone: phone },
+              { $set: { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity } }
+            );
+            await sendMetaInitiateCheckout(sess, server_ip, { value, quantity, charge });
+          } else {
+            await db.collection('sessions').insertOne({
+              user_phone: phone,
+              last_initiate_checkout_at: now,
+              last_charge_identifier: chargeDoc.identifier,
+              last_charge_value: value,
+              last_charge_quantity: quantity,
+              server_ip,
+              createdAt: now
+            });
+            const minimalSess = { user_phone: phone, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
+            await sendMetaInitiateCheckout(minimalSess, server_ip, { value, quantity, charge });
+          }
+        }
+      }
+
+      return sendJson(res, 200, { ok: true, phone: rawPhone || null, value, quantity, capi: { initiate: LAST_CAPI.initiate } });
+    } catch (e) {
+      console.error('[webhook/validar-criado] error', e);
+      return sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+  }
+
   const fsPath = safeJoin(ROOT, pathname);
   if (!fsPath) {
     res.writeHead(400, { 'Content-Type': 'text/plain' });
@@ -753,5 +835,59 @@ async function sendMetaContactFromSession(sess, server_ip) {
     const msg = e && e.message ? e.message : String(e);
     console.warn('[meta] Contact failed', msg);
     LAST_CAPI.contact = { status: null, body: msg };
+  }
+}
+
+async function sendMetaInitiateCheckout(sess, server_ip, opts) {
+  try {
+    if (!PIXEL_ID) { LAST_CAPI.initiate = { status: null, body: 'PIXEL_ID missing' }; return; }
+    if (!META_CAPI_TOKEN) { LAST_CAPI.initiate = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
+    const value = opts && typeof opts.value === 'number' ? opts.value : null;
+    const quantity = opts && typeof opts.quantity === 'number' ? opts.quantity : 1;
+    const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
+    const event_source_url = sess.event_source_url || sess.page_url || 'https://track.agenciaoppus.site/';
+    const ip = normalizeIp(server_ip || sess.server_ip) || '8.8.8.8';
+    const ua = sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+    const contents = [];
+    const ch = opts && opts.charge ? opts.charge : null;
+    const itemId = (ch && (ch.paymentLinkID || ch.identifier || ch.transactionID)) || (sess.client_ref ? `client-${sess.client_ref}` : 'pix');
+    contents.push({ id: itemId, quantity: quantity });
+
+    const custom = stripNulls({
+      currency: 'BRL',
+      value,
+      content_type: 'product',
+      contents
+    });
+
+    const evt = stripNulls({
+      event_name: 'InitiateCheckout',
+      event_id: sess.event_id || undefined,
+      event_time,
+      action_source: 'website',
+      event_source_url,
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null }),
+      custom_data: Object.keys(custom).length ? custom : undefined
+    });
+    const payload = { data: [evt] };
+    if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
+    let resp = await postToMetaEvents(payload);
+    if (resp && resp.status === 400) {
+      const minimal = { data: [ stripNulls({
+        event_name: 'InitiateCheckout',
+        event_time,
+        action_source: 'website',
+        event_source_url,
+        user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua })
+      }) ] };
+      if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
+      resp = await postToMetaEvents(minimal);
+    }
+    LAST_CAPI.initiate = resp || null;
+    if (resp) console.log('[meta] InitiateCheckout sent', resp.status, resp.body);
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    console.warn('[meta] InitiateCheckout failed', msg);
+    LAST_CAPI.initiate = { status: null, body: msg };
   }
 }
