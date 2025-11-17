@@ -679,12 +679,24 @@ async function sendPixelPageView({ client_ref, server_ip }) {
       event_source_url,
       client_ip_address: ip,
       client_user_agent: user_agent || null,
-      user_data: (ph || fbp || fbc) ? stripNulls({ ph, fbp, fbc }) : undefined,
+      user_data: (fbp || fbc) ? stripNulls({ fbp, fbc }) : undefined,
       custom_data: client_ref ? { client_ref } : undefined
     });
     const payload = { data: [evt] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
-    const resp = await postToMetaEvents(payload);
+    let resp = await postToMetaEvents(payload);
+    if (resp && resp.status === 400) {
+      const minimal = { data: [ stripNulls({
+        event_name: 'PageView',
+        event_time: Math.floor(Date.now() / 1000),
+        action_source: 'website',
+        event_source_url,
+        client_ip_address: ip,
+        client_user_agent: user_agent
+      }) ] };
+      if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
+      resp = await postToMetaEvents(minimal);
+    }
     LAST_CAPI.pageview = resp || null;
     if (resp) console.log('[meta] PageView sent', resp.status, resp.body);
   } catch (e) {
@@ -723,12 +735,24 @@ async function sendMetaContactFromSession(sess, server_ip) {
       event_source_url,
       client_ip_address: ip2,
       client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
-      user_data: (ph2 || sess.fbp || sess.fbc) ? stripNulls({ ph: ph2, fbp: sess.fbp || null, fbc: sess.fbc || null }) : undefined,
+      user_data: (sess.fbp || sess.fbc) ? stripNulls({ fbp: sess.fbp || null, fbc: sess.fbc || null }) : undefined,
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt2] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
-    const resp = await postToMetaEvents(payload);
+    let resp = await postToMetaEvents(payload);
+    if (resp && resp.status === 400) {
+      const minimal = { data: [ stripNulls({
+        event_name: 'Contact',
+        event_time,
+        action_source: 'website',
+        event_source_url,
+        client_ip_address: ip2,
+        client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36')
+      }) ] };
+      if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
+      resp = await postToMetaEvents(minimal);
+    }
     LAST_CAPI.contact = resp || null;
     if (resp) console.log('[meta] Contact sent', resp.status, resp.body);
   } catch (e) {
