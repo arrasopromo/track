@@ -650,7 +650,9 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     LAST_CAPI.pageview = resp || null;
     if (resp) console.log('[meta] PageView sent', resp.status, resp.body);
   } catch (e) {
-    console.warn('[meta] PageView failed', e && e.message ? e.message : e);
+    const msg = e && e.message ? e.message : String(e);
+    console.warn('[meta] PageView failed', msg);
+    LAST_CAPI.pageview = { status: null, body: msg };
   }
 }
 
@@ -692,6 +694,8 @@ async function sendMetaContactFromSession(sess, server_ip) {
     LAST_CAPI.contact = resp || null;
     if (resp) console.log('[meta] Contact sent', resp.status, resp.body);
   } catch (e) {
-    console.warn('[meta] Contact failed', e && e.message ? e.message : e);
+    const msg = e && e.message ? e.message : String(e);
+    console.warn('[meta] Contact failed', msg);
+    LAST_CAPI.contact = { status: null, body: msg };
   }
 }
