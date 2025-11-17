@@ -677,9 +677,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
       event_time: Math.floor(Date.now() / 1000),
       action_source: 'website',
       event_source_url,
-      client_ip_address: ip,
-      client_user_agent: user_agent || null,
-      user_data: (fbp || fbc) ? stripNulls({ fbp, fbc }) : undefined,
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: user_agent || null, fbp, fbc }),
       custom_data: client_ref ? { client_ref } : undefined
     });
     const payload = { data: [evt] };
@@ -691,8 +689,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
         event_time: Math.floor(Date.now() / 1000),
         action_source: 'website',
         event_source_url,
-        client_ip_address: ip,
-        client_user_agent: user_agent
+        user_data: stripNulls({ client_ip_address: ip, client_user_agent: user_agent })
       }) ] };
       if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
       resp = await postToMetaEvents(minimal);
@@ -733,9 +730,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
       event_time,
       action_source: 'website',
       event_source_url,
-      client_ip_address: ip2,
-      client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
-      user_data: (sess.fbp || sess.fbc) ? stripNulls({ fbp: sess.fbp || null, fbc: sess.fbc || null }) : undefined,
+      user_data: stripNulls({ client_ip_address: ip2, client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'), fbp: sess.fbp || null, fbc: sess.fbc || null }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt2] };
@@ -747,8 +742,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
         event_time,
         action_source: 'website',
         event_source_url,
-        client_ip_address: ip2,
-        client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36')
+        user_data: stripNulls({ client_ip_address: ip2, client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36') })
       }) ] };
       if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
       resp = await postToMetaEvents(minimal);
