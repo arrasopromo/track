@@ -32,6 +32,11 @@ const CLIENT_REF_START = process.env.CLIENT_REF_START ? Number(process.env.CLIEN
 const CLIENT_REF_SEED = Number.isFinite(CLIENT_REF_START) ? (CLIENT_REF_START - 1) : 22999;
 const CLIENT_REF_FORCE = String(process.env.CLIENT_REF_FORCE || '').trim() === '1';
 
+// Meta Conversions API
+const PIXEL_ID = process.env.META_PIXEL_ID || process.env.PIXEL_ID || '';
+const META_CAPI_TOKEN = process.env.META_CAPI_TOKEN || process.env.META_PIXEL_TOKEN || process.env.ACCESS_TOKEN || '';
+const TEST_EVENT_CODE = process.env.TEST_EVENT_CODE || process.env.META_TEST_EVENT_CODE || '';
+
 const MIME = {
   '.html': 'text/html',
   '.css': 'text/css',
