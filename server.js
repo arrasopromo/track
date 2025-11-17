@@ -53,6 +53,7 @@ const MIME = {
 
 let mongoClient = null;
 let db = null;
+let LAST_CAPI = { pageview: null, contact: null };
 
 async function initMongo() {
   if (!MONGO_URI) {
@@ -301,8 +302,6 @@ const server = http.createServer(async (req, res) => {
 
       console.log('[track] event_id=', body.event_id, 'client_ref=', doc.client_ref, 'click_number=', click_number);
       console.log('[track] message=', doc.message);
-      try { await sendPixelPageView({ client_ref: doc.client_ref || null, server_ip }); } catch (_) {}
-      try { await sendMetaContactFromSession(doc, server_ip); } catch (_) {}
       sendJson(res, 200, { ok: true, click_number, client_ref: doc.client_ref || null });
     } catch (e) {
       console.error('[api/track] error', e);
@@ -328,6 +327,22 @@ const server = http.createServer(async (req, res) => {
       if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
       const resp = await postToMetaEvents(payload);
       return sendJson(res, 200, { ok: true, status: resp && resp.status || null, body: resp && resp.body || null });
+    } catch (e) {
+      return sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+  }
+
+  if (pathname === '/debug/capi-status' && req.method === 'GET') {
+    try {
+      const status = {
+        ok: true,
+        hasPixelId: !!PIXEL_ID,
+        hasToken: !!META_CAPI_TOKEN,
+        hasDb: !!db,
+        testEventCode: !!TEST_EVENT_CODE,
+        last: LAST_CAPI
+      };
+      return sendJson(res, 200, status);
     } catch (e) {
       return sendJson(res, 400, { ok: false, error: String(e.message || e) });
     }
@@ -374,7 +389,13 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
-      await sendPixelPageView({ client_ref, server_ip });
+      try {
+        await sendPixelPageView({ client_ref, server_ip });
+        if (client_ref && db) {
+          const sess = await db.collection('sessions').findOne({ client_ref });
+          if (sess) await sendMetaContactFromSession(sess, server_ip);
+        }
+      } catch (_) {}
       sendJson(res, 200, { ok: true, client_ref, from });
     } catch (e) {
       console.error('[webhook/botconversa] error', e);
@@ -438,7 +459,13 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
-      await sendPixelPageView({ client_ref, server_ip });
+      try {
+        await sendPixelPageView({ client_ref, server_ip });
+        if (client_ref && db) {
+          const sess = await db.collection('sessions').findOne({ client_ref });
+          if (sess) await sendMetaContactFromSession(sess, server_ip);
+        }
+      } catch (_) {}
       sendJson(res, 200, { ok: true, client_ref, from });
     } catch (e) {
       console.error('[webhook/track-cliente] error', e);
@@ -562,8 +589,50 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const payload = { data: [{ event_name: 'PageView', event_id: (sess && sess.event_id) || undefined, event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
     const resp = await postToMetaEvents(payload);
+    LAST_CAPI.pageview = resp || null;
     if (resp) console.log('[meta] PageView sent', resp.status, resp.body);
   } catch (e) {
     console.warn('[meta] PageView failed', e && e.message ? e.message : e);
+  }
+}
+
+async function sendMetaContactFromSession(sess, server_ip) {
+  try {
+    if (!PIXEL_ID || !META_CAPI_TOKEN) return;
+    const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
+    const event_source_url = sess.event_source_url || sess.page_url || 'https://track.agenciaoppus.site/';
+    const payload = {
+      data: [
+        {
+          event_name: 'Contact',
+          event_id: sess.event_id,
+          event_time,
+          action_source: 'website',
+          event_source_url,
+          client_ip_address: server_ip || sess.server_ip || null,
+          client_user_agent: sess.user_agent || null,
+          fbc: sess.fbc || null,
+          fbp: sess.fbp || null,
+          custom_data: {
+            utm_source: sess.utm_source || null,
+            utm_medium: sess.utm_medium || null,
+            utm_campaign: sess.utm_campaign || null,
+            utm_content: sess.utm_content || null,
+            utm_term: sess.utm_term || null,
+            whatsapp_destination: sess.whatsapp_destination || null,
+            message: sess.message || null,
+            referrer: sess.referrer || null,
+            session_id: sess.session_id || null,
+            client_ref: sess.client_ref || null
+          }
+        }
+      ]
+    };
+    if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
+    const resp = await postToMetaEvents(payload);
+    LAST_CAPI.contact = resp || null;
+    if (resp) console.log('[meta] Contact sent', resp.status, resp.body);
+  } catch (e) {
+    console.warn('[meta] Contact failed', e && e.message ? e.message : e);
   }
 }
