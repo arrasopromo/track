@@ -158,6 +158,8 @@
   document.addEventListener('DOMContentLoaded', function () {
     var cfg = window.TRACK_CONFIG || {};
     if (window.tracking && window.tracking.ensureMetaCookies) window.tracking.ensureMetaCookies();
+    var data = window.tracking && window.tracking.getTrackingData ? window.tracking.getTrackingData() : {};
+    try { postWebhook('/api/pageview', data); } catch (e) {}
 
     var btn = document.getElementById('whatsapp-cta');
     if (btn) {
