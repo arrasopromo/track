@@ -643,7 +643,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     let sess = null;
     if (client_ref && db) sess = await db.collection('sessions').findOne({ client_ref });
     const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
-    const user_agent = (sess && sess.user_agent) || null;
+    const user_agent = (sess && sess.user_agent) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
     const fbp = (sess && sess.fbp) || null;
     const fbc = (sess && sess.fbc) || null;
     const payload = { data: [{ event_name: 'PageView', event_id: (sess && sess.event_id) || undefined, event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
@@ -673,7 +673,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
           action_source: 'website',
           event_source_url,
           client_ip_address: server_ip || sess.server_ip || null,
-          client_user_agent: sess.user_agent || null,
+          client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
           fbc: sess.fbc || null,
           fbp: sess.fbp || null,
           custom_data: {
