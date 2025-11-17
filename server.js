@@ -63,7 +63,11 @@ async function initMongo() {
   mongoClient = new MongoClient(MONGO_URI, { maxPoolSize: 10 });
   await mongoClient.connect();
   db = mongoClient.db(MONGO_DB_NAME);
-  await db.collection('sessions').createIndex({ event_id: 1 }, { unique: true }).catch(() => {});
+  try { await db.collection('sessions').dropIndex('event_id_1'); } catch (_) {}
+  await db.collection('sessions').createIndex(
+    { event_id: 1 },
+    { unique: true, partialFilterExpression: { event_id: { $exists: true, $ne: null } } }
+  ).catch(() => {});
   await db.collection('sessions').createIndex({ client_ref: 1 }).catch(() => {});
   await db.collection('sessions').createIndex({ createdAt: 1 }).catch(() => {});
   await db.collection('messages').createIndex({ from: 1, createdAt: 1 }).catch(() => {});
@@ -401,9 +405,49 @@ const server = http.createServer(async (req, res) => {
           await sendMetaContactFromSession(sess, server_ip);
         }
       } catch (_) {}
-      sendJson(res, 200, { ok: true, client_ref, from });
+      sendJson(res, 200, { ok: true, client_ref, from, capi: { pageview: LAST_CAPI.pageview, contact: LAST_CAPI.contact } });
     } catch (e) {
       console.error('[webhook/botconversa] error', e);
+      sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+    return;
+  }
+
+  if (pathname === '/webhook/botconversa' && req.method === 'GET') {
+    try {
+      const server_ip = getIpFromHeaders(req);
+      const now = new Date();
+      const rawFrom = url.searchParams.get('from') || url.searchParams.get('phone') || url.searchParams.get('tel') || url.searchParams.get('telefone') || '';
+      const from = String(rawFrom).replace(/[^0-9+]/g, '');
+      const rawClientRef = url.searchParams.get('client_ref') || url.searchParams.get('clientRef') || url.searchParams.get('id') || url.searchParams.get('idcliente') || null;
+      const client_ref = (rawClientRef !== null && rawClientRef !== undefined) ? String(rawClientRef) : null;
+
+      if (db) {
+        await db.collection('messages').insertOne({ type: 'botconversa-get', from, client_ref, server_ip, createdAt: now });
+        if (client_ref) {
+          const existing = await db.collection('sessions').findOne({ client_ref });
+          if (existing) {
+            await db.collection('sessions').updateMany(
+              { client_ref },
+              { $set: { user_phone: from, whatsapp_received_at: now } }
+            );
+          } else {
+            await db.collection('sessions').insertOne({ client_ref, user_phone: from, whatsapp_received_at: now, server_ip, createdAt: now });
+          }
+        }
+      }
+      if (client_ref) {
+        try {
+          await sendPixelPageView({ client_ref, server_ip });
+          let sess = null;
+          if (client_ref && db) sess = await db.collection('sessions').findOne({ client_ref });
+          if (!sess) sess = { client_ref, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
+          await sendMetaContactFromSession(sess, server_ip);
+        } catch (_) {}
+      }
+      sendJson(res, 200, { ok: true, client_ref, from, capi: { pageview: LAST_CAPI.pageview, contact: LAST_CAPI.contact } });
+    } catch (e) {
+      console.error('[webhook/botconversa GET] error', e);
       sendJson(res, 400, { ok: false, error: String(e.message || e) });
     }
     return;
@@ -481,7 +525,7 @@ const server = http.createServer(async (req, res) => {
           await sendMetaContactFromSession(sess, server_ip);
         }
       } catch (_) {}
-      sendJson(res, 200, { ok: true, client_ref, from });
+      sendJson(res, 200, { ok: true, client_ref, from, capi: { pageview: LAST_CAPI.pageview, contact: LAST_CAPI.contact } });
     } catch (e) {
       console.error('[webhook/track-cliente] error', e);
       sendJson(res, 400, { ok: false, error: String(e.message || e) });
