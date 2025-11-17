@@ -301,6 +301,8 @@ const server = http.createServer(async (req, res) => {
 
       console.log('[track] event_id=', body.event_id, 'client_ref=', doc.client_ref, 'click_number=', click_number);
       console.log('[track] message=', doc.message);
+      try { await sendPixelPageView({ client_ref: doc.client_ref || null, server_ip }); } catch (_) {}
+      try { await sendMetaContactFromSession(doc, server_ip); } catch (_) {}
       sendJson(res, 200, { ok: true, click_number, client_ref: doc.client_ref || null });
     } catch (e) {
       console.error('[api/track] error', e);
@@ -557,7 +559,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const user_agent = (sess && sess.user_agent) || null;
     const fbp = (sess && sess.fbp) || null;
     const fbc = (sess && sess.fbc) || null;
-    const payload = { data: [{ event_name: 'PageView', event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
+    const payload = { data: [{ event_name: 'PageView', event_id: (sess && sess.event_id) || undefined, event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
     const resp = await postToMetaEvents(payload);
     if (resp) console.log('[meta] PageView sent', resp.status, resp.body);

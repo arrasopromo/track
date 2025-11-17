@@ -107,6 +107,7 @@
     var baseMsg = cfg.defaultMessage || ''; // force fixed message from config
     var data = window.tracking && window.tracking.getTrackingData ? window.tracking.getTrackingData() : {};
     var eventId = uuid();
+    if (window.fbq) { try { window.fbq('track', 'PageView', { eventID: eventId }); window.fbq('track', 'Contact', { eventID: eventId }); } catch (e) {} }
 
     function ensureClientRefFirst() {
       return fetchNextClientRef(cfg).then(function (clientRef) {
@@ -167,7 +168,9 @@
       });
     }
 
-    if (cfg.autoRedirectOnLoad) {
+    var search = window.location.search || '';
+    var debug = /[?&]debug=1(&|$)/.test(search);
+    if (cfg.autoRedirectOnLoad && !debug) {
       var delay = typeof cfg.autoRedirectDelayMs === 'number' ? cfg.autoRedirectDelayMs : 1000;
       setTimeout(function () {
         handleRedirect('auto', btn, cfg);
