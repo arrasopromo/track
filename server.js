@@ -206,6 +206,26 @@ function normalizeIp(ip) {
   return m ? m[1] : null;
 }
 
+async function getEventIdFor(event_name, sess) {
+  try {
+    if (!db) return null;
+    const filters = [];
+    if (sess && sess.client_ref) filters.push({ client_ref: sess.client_ref });
+    const phoneRaw = sess && sess.user_phone ? String(sess.user_phone) : null;
+    const phoneDigits = phoneRaw ? String(phoneRaw).replace(/[^0-9]/g, '') : null;
+    if (phoneDigits) {
+      filters.push({ user_phone: phoneDigits });
+      filters.push({ user_phone: `+${phoneDigits}` });
+    }
+    const base = { event_name };
+    const query = filters.length ? { $and: [ base, { $or: filters } ] } : base;
+    const docs = await db.collection('sessions').find(query).sort({ createdAt: -1 }).limit(1).toArray();
+    return (docs && docs[0] && docs[0].event_id) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = url.pathname;
@@ -979,9 +999,10 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       utm_term: sess.utm_term || null
     });
 
+    const eid = await getEventIdFor('InitiateCheckout', sess);
     const evt = stripNulls({
       event_name: 'InitiateCheckout',
-      event_id: sess.event_id || undefined,
+      event_id: eid || sess.event_id || undefined,
       event_time,
       action_source: 'website',
       event_source_url,
@@ -1060,9 +1081,10 @@ async function sendMetaPurchase(sess, server_ip, opts) {
       utm_term: sess.utm_term || null
     });
 
+    const eid = await getEventIdFor('Purchase', sess);
     const evt = stripNulls({
       event_name: 'Purchase',
-      event_id: sess.event_id || undefined,
+      event_id: eid || sess.event_id || undefined,
       event_time,
       action_source: 'website',
       event_source_url,
