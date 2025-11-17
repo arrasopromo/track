@@ -594,7 +594,7 @@ const server = http.createServer(async (req, res) => {
 
   // Webhook: Woovi/OpenPix - charge created → atribui ao user_phone e dispara InitiateCheckout
   if (pathname === '/webhook/validar-criado' && req.method === 'GET') {
-    return sendJson(res, 404, { code: 404, message: 'This webhook is not registered for GET requests. Did you mean to make a POST request?' });
+    return sendJson(res, 200, { ok: true, message: 'Webhook endpoint ready. Use POST for events.' });
   }
 
   if (pathname === '/webhook/validar-criado' && req.method === 'POST') {
