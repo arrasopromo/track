@@ -355,10 +355,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const server_ip = getIpFromHeaders(req);
       const text = String(body.text || body.message || '');
-      const rawFrom = body.from || body.phone || body.tel || body.telefone || '';
+      const rawFrom = body.from || body.phone || body.tel || body.telefone || url.searchParams.get('from') || url.searchParams.get('phone') || url.searchParams.get('tel') || url.searchParams.get('telefone') || '';
       const from = String(rawFrom).replace(/[^0-9+]/g, '');
       const mCliente = text.match(/cliente#([A-Za-z0-9_-]+)/i);
-      const rawClientRef = mCliente ? mCliente[1] : (body.client_ref || body.idcliente || body.id || null);
+      const rawClientRef = mCliente ? mCliente[1] : (body.client_ref || body.clientRef || body.idcliente || body.id || url.searchParams.get('client_ref') || url.searchParams.get('clientRef') || url.searchParams.get('idcliente') || url.searchParams.get('id') || null);
       const client_ref = (rawClientRef !== null && rawClientRef !== undefined) ? String(rawClientRef) : null;
       const now = new Date();
 
@@ -425,11 +425,16 @@ const server = http.createServer(async (req, res) => {
       const now = new Date();
 
       const text = String(body.text || body.message || '');
-      const from = String(body.from || body.phone || '').replace(/[^0-9+]/g, '');
+      const from = String(body.from || body.phone || url.searchParams.get('from') || url.searchParams.get('phone') || '').replace(/[^0-9+]/g, '');
       let client_ref = null;
 
       if (body.id != null) client_ref = String(body.id);
       else if (body.client_ref != null) client_ref = String(body.client_ref);
+      else if (body.clientRef != null) client_ref = String(body.clientRef);
+      else if (url.searchParams.get('client_ref')) client_ref = String(url.searchParams.get('client_ref'));
+      else if (url.searchParams.get('clientRef')) client_ref = String(url.searchParams.get('clientRef'));
+      else if (url.searchParams.get('id')) client_ref = String(url.searchParams.get('id'));
+      else if (url.searchParams.get('idcliente')) client_ref = String(url.searchParams.get('idcliente'));
       else {
         const m = text.match(/cliente#([A-Za-z0-9_-]+)/i);
         client_ref = m ? m[1] : null;
@@ -589,9 +594,8 @@ async function sendPixelPageView({ client_ref, server_ip }) {
   try {
     if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); return; }
     if (!META_CAPI_TOKEN) { console.warn('[meta] PageView skipped: META_CAPI_TOKEN missing'); return; }
-    if (!db) { console.warn('[meta] PageView skipped: MongoDB not connected'); return; }
     let sess = null;
-    if (client_ref) sess = await db.collection('sessions').findOne({ client_ref });
+    if (client_ref && db) sess = await db.collection('sessions').findOne({ client_ref });
     const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
     const user_agent = (sess && sess.user_agent) || null;
     const fbp = (sess && sess.fbp) || null;
