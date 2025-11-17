@@ -668,7 +668,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const user_agent = (sess && sess.user_agent) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
     const fbp = (sess && sess.fbp) || null;
     const fbc = (sess && sess.fbc) || null;
-    const phone = (sess && sess.user_phone) ? String(sess.user_phone).replace(/[^0-9+]/g, '') : null;
+    const phone = (sess && sess.user_phone) ? String(sess.user_phone).replace(/[^0-9]/g, '') : null;
     const ph = phone ? sha256Hex(phone) : null;
     const ip = normalizeIp(server_ip || (sess && sess.server_ip)) || '8.8.8.8';
     const evt = stripNulls({
@@ -679,9 +679,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
       event_source_url,
       client_ip_address: ip,
       client_user_agent: user_agent || null,
-      fbc,
-      fbp,
-      user_data: ph ? { ph } : undefined,
+      user_data: (ph || fbp || fbc) ? stripNulls({ ph, fbp, fbc }) : undefined,
       custom_data: client_ref ? { client_ref } : undefined
     });
     const payload = { data: [evt] };
@@ -702,7 +700,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
     if (!META_CAPI_TOKEN) { console.warn('[meta] Contact skipped: META_CAPI_TOKEN missing'); LAST_CAPI.contact = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
     const event_source_url = sess.event_source_url || sess.page_url || 'https://track.agenciaoppus.site/';
-    const phone2 = sess.user_phone ? String(sess.user_phone).replace(/[^0-9+]/g, '') : null;
+    const phone2 = sess.user_phone ? String(sess.user_phone).replace(/[^0-9]/g, '') : null;
     const ph2 = phone2 ? sha256Hex(phone2) : null;
     const custom = stripNulls({
       utm_source: sess.utm_source || null,
@@ -725,9 +723,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
       event_source_url,
       client_ip_address: ip2,
       client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
-      fbc: sess.fbc || null,
-      fbp: sess.fbp || null,
-      user_data: ph2 ? { ph: ph2 } : undefined,
+      user_data: (ph2 || sess.fbp || sess.fbc) ? stripNulls({ ph: ph2, fbp: sess.fbp || null, fbc: sess.fbc || null }) : undefined,
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt2] };
