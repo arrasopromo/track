@@ -610,6 +610,8 @@ const server = http.createServer(async (req, res) => {
       const phone = rawPhone ? String(rawPhone).replace(/[^0-9]/g, '') : null;
       const clientRefInfo = (addInfo.find(x => String(x.key).toLowerCase() === 'cliente') || {}).value || null;
       const client_ref = clientRefInfo != null ? String(clientRefInfo) : null;
+      const clientRefInfo = (addInfo.find(x => String(x.key).toLowerCase() === 'cliente') || {}).value || null;
+      const client_ref = clientRefInfo != null ? String(clientRefInfo) : null;
 
       const valueCents = Number(charge.value != null ? charge.value : (charge.paymentMethods && charge.paymentMethods.pix && charge.paymentMethods.pix.value != null ? charge.paymentMethods.pix.value : 0));
       const value = Number((valueCents / 100).toFixed(2));
@@ -945,12 +947,38 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
     const ch = opts && opts.charge ? opts.charge : null;
     const itemId = (ch && (ch.paymentLinkID || ch.identifier || ch.transactionID)) || (sess.client_ref ? `client-${sess.client_ref}` : 'pix');
     contents.push({ id: itemId, quantity: quantity });
+    const payMethod = (ch && ch.paymentMethods && ch.paymentMethods.pix && ch.paymentMethods.pix.method) || null;
+    const phoneRaw = sess.user_phone || (ch && ch.customer && ch.customer.phone) || null;
+    const phoneDigits = phoneRaw ? String(phoneRaw).replace(/[^0-9]/g, '') : null;
+    const ph = phoneDigits ? sha256Hex(phoneDigits) : null;
+    const emailRaw = sess.email || null;
+    const em = emailRaw ? sha256Hex(String(emailRaw).trim().toLowerCase()) : null;
+    const nameRaw = (ch && ch.customer && ch.customer.name) || sess.name || null;
+    let fn = null, ln = null;
+    if (nameRaw) {
+      const parts = String(nameRaw).trim().toLowerCase().split(/\s+/);
+      fn = parts[0] ? sha256Hex(parts[0]) : null;
+      ln = parts.length > 1 ? sha256Hex(parts[parts.length - 1]) : null;
+    }
+    const external_id = sess.client_ref || sess.session_id || null;
 
     const custom = stripNulls({
       currency: 'BRL',
       value,
       content_type: 'product',
-      contents
+      contents,
+      num_items: quantity,
+      order_id: undefined,
+      payment_type: payMethod || 'pix',
+      source_url: event_source_url,
+      referrer: sess.referrer || null,
+      session_id: sess.session_id || null,
+      client_ref: sess.client_ref || null,
+      utm_source: sess.utm_source || null,
+      utm_medium: sess.utm_medium || null,
+      utm_campaign: sess.utm_campaign || null,
+      utm_content: sess.utm_content || null,
+      utm_term: sess.utm_term || null
     });
 
     const evt = stripNulls({
@@ -959,7 +987,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null }),
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null, ph, em, fn, ln, external_id }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
@@ -1000,13 +1028,38 @@ async function sendMetaPurchase(sess, server_ip, opts) {
     const itemId = (ch && (ch.paymentLinkID || ch.identifier || ch.transactionID)) || (sess.client_ref ? `client-${sess.client_ref}` : 'pix');
     contents.push({ id: itemId, quantity: quantity });
     const order_id = (ch && (ch.identifier || ch.transactionID)) || undefined;
+    const payMethod = (ch && ch.paymentMethods && ch.paymentMethods.pix && ch.paymentMethods.pix.method) || null;
+    const phoneRaw = sess.user_phone || (ch && ch.customer && ch.customer.phone) || null;
+    const phoneDigits = phoneRaw ? String(phoneRaw).replace(/[^0-9]/g, '') : null;
+    const ph = phoneDigits ? sha256Hex(phoneDigits) : null;
+    const emailRaw = sess.email || null;
+    const em = emailRaw ? sha256Hex(String(emailRaw).trim().toLowerCase()) : null;
+    const nameRaw = (ch && ch.customer && ch.customer.name) || sess.name || null;
+    let fn = null, ln = null;
+    if (nameRaw) {
+      const parts = String(nameRaw).trim().toLowerCase().split(/\s+/);
+      fn = parts[0] ? sha256Hex(parts[0]) : null;
+      ln = parts.length > 1 ? sha256Hex(parts[parts.length - 1]) : null;
+    }
+    const external_id = sess.client_ref || sess.session_id || null;
 
     const custom = stripNulls({
       currency: 'BRL',
       value,
       content_type: 'product',
       contents,
-      order_id
+      order_id,
+      num_items: quantity,
+      payment_type: payMethod || 'pix',
+      source_url: event_source_url,
+      referrer: sess.referrer || null,
+      session_id: sess.session_id || null,
+      client_ref: sess.client_ref || null,
+      utm_source: sess.utm_source || null,
+      utm_medium: sess.utm_medium || null,
+      utm_campaign: sess.utm_campaign || null,
+      utm_content: sess.utm_content || null,
+      utm_term: sess.utm_term || null
     });
 
     const evt = stripNulls({
@@ -1015,7 +1068,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null }),
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null, ph, em, fn, ln, external_id }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
