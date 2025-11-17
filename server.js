@@ -366,6 +366,7 @@ const server = http.createServer(async (req, res) => {
       const client_ref = (rawClientRef !== null && rawClientRef !== undefined) ? String(rawClientRef) : null;
       const now = new Date();
 
+      let triggerSend = false;
       if (db) {
         await db.collection('messages').insertOne({
           text,
@@ -374,7 +375,7 @@ const server = http.createServer(async (req, res) => {
           server_ip,
           createdAt: now
         });
-        let triggerSend = !!client_ref;
+        triggerSend = !!client_ref;
         if (client_ref) {
           const existing = await db.collection('sessions').findOne({ client_ref });
           if (existing) {
@@ -484,6 +485,7 @@ const server = http.createServer(async (req, res) => {
         client_ref = m ? m[1] : null;
       }
 
+      let triggerSend2 = false;
       if (db) {
         await db.collection('messages').insertOne({
           type: 'track-cliente',
@@ -494,7 +496,7 @@ const server = http.createServer(async (req, res) => {
           payload: body,
           createdAt: now
         });
-        let triggerSend2 = !!client_ref;
+        triggerSend2 = !!client_ref;
         if (client_ref) {
           const existing = await db.collection('sessions').findOne({ client_ref });
           if (existing) {
