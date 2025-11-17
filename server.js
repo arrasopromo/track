@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { MongoClient } = require('mongodb');
 const https = require('https');
+const crypto = require('crypto');
 
 // Load .env file variables (simple parser)
 const ENV_PATH = path.resolve(__dirname, '.env');
@@ -636,6 +637,20 @@ function postToMetaEvents(payload) {
   });
 }
 
+function sha256Hex(s) {
+  try { return crypto.createHash('sha256').update(s, 'utf8').digest('hex'); } catch (_) { return null; }
+}
+
+function stripNulls(obj) {
+  const out = {};
+  for (const k in obj) {
+    const v = obj[k];
+    if (v === null || v === undefined) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 async function sendPixelPageView({ client_ref, server_ip }) {
   try {
     if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); LAST_CAPI.pageview = { status: null, body: 'PIXEL_ID missing' }; return; }
@@ -646,7 +661,22 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const user_agent = (sess && sess.user_agent) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
     const fbp = (sess && sess.fbp) || null;
     const fbc = (sess && sess.fbc) || null;
-    const payload = { data: [{ event_name: 'PageView', event_id: (sess && sess.event_id) || undefined, event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
+    const phone = (sess && sess.user_phone) ? String(sess.user_phone).replace(/[^0-9+]/g, '') : null;
+    const ph = phone ? sha256Hex(phone) : null;
+    const evt = stripNulls({
+      event_name: 'PageView',
+      event_id: (sess && sess.event_id) || undefined,
+      event_time: Math.floor(Date.now() / 1000),
+      action_source: 'website',
+      event_source_url,
+      client_ip_address: server_ip || null,
+      client_user_agent: user_agent || null,
+      fbc,
+      fbp,
+      user_data: ph ? { ph } : undefined,
+      custom_data: client_ref ? { client_ref } : undefined
+    });
+    const payload = { data: [evt] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
     const resp = await postToMetaEvents(payload);
     LAST_CAPI.pageview = resp || null;
@@ -664,33 +694,34 @@ async function sendMetaContactFromSession(sess, server_ip) {
     if (!META_CAPI_TOKEN) { console.warn('[meta] Contact skipped: META_CAPI_TOKEN missing'); LAST_CAPI.contact = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
     const event_source_url = sess.event_source_url || sess.page_url || 'https://track.agenciaoppus.site/';
-    const payload = {
-      data: [
-        {
-          event_name: 'Contact',
-          event_id: sess.event_id,
-          event_time,
-          action_source: 'website',
-          event_source_url,
-          client_ip_address: server_ip || sess.server_ip || null,
-          client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
-          fbc: sess.fbc || null,
-          fbp: sess.fbp || null,
-          custom_data: {
-            utm_source: sess.utm_source || null,
-            utm_medium: sess.utm_medium || null,
-            utm_campaign: sess.utm_campaign || null,
-            utm_content: sess.utm_content || null,
-            utm_term: sess.utm_term || null,
-            whatsapp_destination: sess.whatsapp_destination || null,
-            message: sess.message || null,
-            referrer: sess.referrer || null,
-            session_id: sess.session_id || null,
-            client_ref: sess.client_ref || null
-          }
-        }
-      ]
-    };
+    const phone2 = sess.user_phone ? String(sess.user_phone).replace(/[^0-9+]/g, '') : null;
+    const ph2 = phone2 ? sha256Hex(phone2) : null;
+    const custom = stripNulls({
+      utm_source: sess.utm_source || null,
+      utm_medium: sess.utm_medium || null,
+      utm_campaign: sess.utm_campaign || null,
+      utm_content: sess.utm_content || null,
+      utm_term: sess.utm_term || null,
+      whatsapp_destination: sess.whatsapp_destination || null,
+      message: sess.message || null,
+      referrer: sess.referrer || null,
+      session_id: sess.session_id || null,
+      client_ref: sess.client_ref || null
+    });
+    const evt2 = stripNulls({
+      event_name: 'Contact',
+      event_id: sess.event_id || undefined,
+      event_time,
+      action_source: 'website',
+      event_source_url,
+      client_ip_address: server_ip || sess.server_ip || null,
+      client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
+      fbc: sess.fbc || null,
+      fbp: sess.fbp || null,
+      user_data: ph2 ? { ph: ph2 } : undefined,
+      custom_data: Object.keys(custom).length ? custom : undefined
+    });
+    const payload = { data: [evt2] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
     const resp = await postToMetaEvents(payload);
     LAST_CAPI.contact = resp || null;
