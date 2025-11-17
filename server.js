@@ -304,39 +304,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // API: PageView direto via CAPI
-  if (pathname === '/api/pageview' && req.method === 'POST') {
+  // Debug: testar CAPI diretamente
+  if (pathname === '/debug/capi-test' && req.method === 'GET') {
     try {
-      const body = await readJson(req);
-      const server_ip = getIpFromHeaders(req);
-      const headers = req.headers || {};
-      const event_time = Math.floor((Date.parse(body.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
+      if (!PIXEL_ID || !META_CAPI_TOKEN) return sendJson(res, 400, { ok: false, error: 'PIXEL_ID/META_CAPI_TOKEN ausentes' });
       const payload = {
         data: [
           {
             event_name: 'PageView',
-            event_time,
+            event_time: Math.floor(Date.now() / 1000),
             action_source: 'website',
-            event_source_url: body.event_source_url || body.page_url || 'https://track.agenciaoppus.site/',
-            client_ip_address: server_ip || null,
-            client_user_agent: headers['user-agent'] || body.user_agent || null,
-            fbc: body.fbc || null,
-            fbp: body.fbp || null,
-            custom_data: {
-              referrer: body.referrer || null,
-              session_id: body.session_id || null
-            }
+            event_source_url: 'https://track.agenciaoppus.site/'
           }
         ]
       };
       if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
       const resp = await postToMetaEvents(payload);
-      sendJson(res, 200, { ok: true, status: resp && resp.status || null });
+      return sendJson(res, 200, { ok: true, status: resp && resp.status || null, body: resp && resp.body || null });
     } catch (e) {
-      sendJson(res, 400, { ok: false, error: String(e.message || e) });
+      return sendJson(res, 400, { ok: false, error: String(e.message || e) });
     }
-    return;
   }
+
 
   // Webhook: BotConversa (mensagem recebida) → associa telefone ao client_ref
   if (pathname === '/webhook/botconversa' && req.method === 'POST') {
@@ -554,7 +543,9 @@ function postToMetaEvents(payload) {
 
 async function sendPixelPageView({ client_ref, server_ip }) {
   try {
-    if (!PIXEL_ID || !META_CAPI_TOKEN || !db) return;
+    if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); return; }
+    if (!META_CAPI_TOKEN) { console.warn('[meta] PageView skipped: META_CAPI_TOKEN missing'); return; }
+    if (!db) { console.warn('[meta] PageView skipped: MongoDB not connected'); return; }
     let sess = null;
     if (client_ref) sess = await db.collection('sessions').findOne({ client_ref });
     const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
@@ -564,7 +555,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const payload = { data: [{ event_name: 'PageView', event_time: Math.floor(Date.now() / 1000), action_source: 'website', event_source_url, client_ip_address: server_ip || null, client_user_agent: user_agent || null, fbc: fbc || null, fbp: fbp || null, custom_data: { client_ref: client_ref || null } }] };
     if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
     const resp = await postToMetaEvents(payload);
-    if (resp) console.log('[meta] PageView sent', resp.status);
+    if (resp) console.log('[meta] PageView sent', resp.status, resp.body);
   } catch (e) {
     console.warn('[meta] PageView failed', e && e.message ? e.message : e);
   }
