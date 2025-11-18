@@ -297,6 +297,9 @@ const server = http.createServer(async (req, res) => {
         server_ip,
         createdAt: now,
       });
+      if (doc.message) {
+        doc.message = String(doc.message).replace(/^abc\b/i, 'Tenho interesse em saber mais sobre os serviços');
+      }
 
       let click_number = null;
 
