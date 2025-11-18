@@ -670,17 +670,19 @@ const server = http.createServer(async (req, res) => {
         );
 
         const sessQuery = client_ref ? { client_ref } : (phone ? { $or: [ { user_phone: phone }, { user_phone: `+${phone}` } ] } : null);
+        const isCompleted = String(body.event || '').toUpperCase().includes('COMPLETED');
         if (sessQuery) {
           const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
-            if (client_ref) {
-              await db.collection('sessions').updateOne({ client_ref }, { $set: { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity } });
-            } else {
-              await db.collection('sessions').updateMany(sessQuery, { $set: { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity } });
-            }
-            await sendMetaInitiateCheckout(sess, server_ip, { value, quantity, charge });
+            const setFields = { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity };
+            if (isCompleted) Object.assign(setFields, { last_purchase_at: now, last_purchase_status: chargeDoc.status || 'COMPLETED', last_purchase_value: value });
+            if (client_ref) await db.collection('sessions').updateOne({ client_ref }, { $set: setFields });
+            else await db.collection('sessions').updateMany(sessQuery, { $set: setFields });
+            const enriched = await enrichSessionMeta(sess);
+            await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge });
+            if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge });
           } else {
-            await db.collection('sessions').insertOne({
+            const insertDoc = {
               user_phone: phone || null,
               client_ref: client_ref || null,
               last_initiate_checkout_at: now,
@@ -689,14 +691,18 @@ const server = http.createServer(async (req, res) => {
               last_charge_quantity: quantity,
               server_ip,
               createdAt: now
-            });
+            };
+            if (isCompleted) Object.assign(insertDoc, { last_purchase_at: now, last_purchase_status: chargeDoc.status || 'COMPLETED', last_purchase_value: value });
+            await db.collection('sessions').insertOne(insertDoc);
             const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
-            await sendMetaInitiateCheckout(minimalSess, server_ip, { value, quantity, charge });
+            const enriched = await enrichSessionMeta(minimalSess);
+            await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge });
+            if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge });
           }
         }
       }
 
-      return sendJson(res, 200, { ok: true, phone: rawPhone || null, client_ref: client_ref || null, value, quantity, capi: { initiate: LAST_CAPI.initiate } });
+      return sendJson(res, 200, { ok: true, phone: rawPhone || null, client_ref: client_ref || null, value, quantity, capi: { initiate: LAST_CAPI.initiate, purchase: LAST_CAPI.purchase } });
     } catch (e) {
       console.error('[webhook/validar-criado] error', e);
       return sendJson(res, 400, { ok: false, error: String(e.message || e) });
@@ -958,6 +964,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
   try {
     if (!PIXEL_ID) { LAST_CAPI.initiate = { status: null, body: 'PIXEL_ID missing' }; return; }
     if (!META_CAPI_TOKEN) { LAST_CAPI.initiate = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
+    sess = await enrichSessionMeta(sess);
     const value = opts && typeof opts.value === 'number' ? opts.value : null;
     const quantity = opts && typeof opts.quantity === 'number' ? opts.quantity : 1;
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
@@ -981,7 +988,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       fn = parts[0] ? sha256Hex(parts[0]) : null;
       ln = parts.length > 1 ? sha256Hex(parts[parts.length - 1]) : null;
     }
-    const external_id = sess.client_ref || sess.session_id || null;
+    const external_id = sess.client_ref || sess.session_id || phoneDigits || itemId || null;
 
     const custom = stripNulls({
       currency: 'BRL',
@@ -1039,6 +1046,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
   try {
     if (!PIXEL_ID) { LAST_CAPI.purchase = { status: null, body: 'PIXEL_ID missing' }; return; }
     if (!META_CAPI_TOKEN) { LAST_CAPI.purchase = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
+    sess = await enrichSessionMeta(sess);
     const value = opts && typeof opts.value === 'number' ? opts.value : null;
     const quantity = opts && typeof opts.quantity === 'number' ? opts.quantity : 1;
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
@@ -1063,7 +1071,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
       fn = parts[0] ? sha256Hex(parts[0]) : null;
       ln = parts.length > 1 ? sha256Hex(parts[parts.length - 1]) : null;
     }
-    const external_id = sess.client_ref || sess.session_id || null;
+    const external_id = sess.client_ref || sess.session_id || phoneDigits || itemId || null;
 
     const custom = stripNulls({
       currency: 'BRL',
