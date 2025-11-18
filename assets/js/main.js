@@ -27,6 +27,16 @@
     return 'https://wa.me/' + clean + '?text=' + encodeURIComponent(message || '');
   }
 
+  function waDeepLink(phone, message) {
+    var clean = (phone || '').replace(/[^0-9]/g, '');
+    return 'whatsapp://send?phone=' + clean + '&text=' + encodeURIComponent(message || '');
+  }
+
+  function isMobile() {
+    var ua = navigator.userAgent || '';
+    return /Android|iPhone|iPad|iPod|Windows Phone/i.test(ua);
+  }
+
   function postWebhook(url, payload) {
     if (!url) return Promise.resolve();
     var body = JSON.stringify(payload);
@@ -133,7 +143,7 @@
         if (token) finalMsgBase = finalMsgBase + ' #e:' + token;
       }
       var finalMsg = buildMessage(finalMsgBase, data, !!cfg.appendUtmToMessage);
-      var url = waLink(phone, finalMsg);
+      var url = isMobile() ? waDeepLink(phone, finalMsg) : waLink(phone, finalMsg);
 
       console.log('[client] finalMsgBase=', finalMsgBase, 'clientRef=', clientRef, 'url=', url);
 
