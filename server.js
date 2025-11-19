@@ -606,6 +606,9 @@ const server = http.createServer(async (req, res) => {
             { $set: { last_purchase_at: now, last_purchase_status: doc.status } }
           );
         }
+
+        const minimalSess = { user_phone: doc.phone || null, client_ref: doc.client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: doc.timestamp, server_ip };
+        await sendMetaPurchase(minimalSess, server_ip, { value: doc.value, quantity: 1 });
       }
       sendJson(res, 200, { ok: true });
     } catch (e) {
