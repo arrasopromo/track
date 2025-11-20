@@ -608,7 +608,8 @@ const server = http.createServer(async (req, res) => {
         }
 
         const minimalSess = { user_phone: doc.phone || null, client_ref: doc.client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: doc.timestamp, server_ip };
-        await sendMetaPurchase(minimalSess, server_ip, { value: doc.value, quantity: 1 });
+        const testCode = url.searchParams.get('test_event_code') || null;
+        await sendMetaPurchase(minimalSess, server_ip, { value: doc.value, quantity: 1, test_event_code: testCode });
         try { await setSessionFlags(minimalSess, { has_purchase: true }); } catch (_) {}
       }
       sendJson(res, 200, { ok: true });
@@ -675,6 +676,7 @@ const server = http.createServer(async (req, res) => {
 
         const sessQuery = client_ref ? { client_ref } : (phone ? { $or: [ { user_phone: phone }, { user_phone: `+${phone}` } ] } : null);
         const isCompleted = String(body.event || '').toUpperCase().includes('COMPLETED');
+        const testCode = url.searchParams.get('test_event_code') || null;
         if (sessQuery) {
           const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
@@ -683,8 +685,8 @@ const server = http.createServer(async (req, res) => {
             if (client_ref) await db.collection('sessions').updateOne({ client_ref }, { $set: setFields });
             else await db.collection('sessions').updateMany(sessQuery, { $set: setFields });
             const enriched = await enrichSessionMeta(sess);
-            await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge });
-            if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge });
+            await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
+            if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
           } else {
             const insertDoc = {
               user_phone: phone || null,
@@ -701,8 +703,8 @@ const server = http.createServer(async (req, res) => {
             await db.collection('sessions').insertOne(insertDoc);
             const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
             const enriched = await enrichSessionMeta(minimalSess);
-            await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge });
-            if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge });
+            await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
+            if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
           }
         }
       }
@@ -767,6 +769,7 @@ const server = http.createServer(async (req, res) => {
         );
 
         const sessQuery = client_ref ? { client_ref } : (phone ? { $or: [ { user_phone: phone }, { user_phone: `+${phone}` } ] } : null);
+        const testCode = url.searchParams.get('test_event_code') || null;
         if (sessQuery) {
           const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
@@ -775,7 +778,7 @@ const server = http.createServer(async (req, res) => {
             } else {
               await db.collection('sessions').updateMany(sessQuery, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity, has_purchase: true } });
             }
-            await sendMetaPurchase(sess, server_ip, { value, quantity, charge });
+            await sendMetaPurchase(sess, server_ip, { value, quantity, charge, test_event_code: testCode });
           } else {
             await db.collection('sessions').insertOne({
               user_phone: phone || null,
@@ -790,7 +793,7 @@ const server = http.createServer(async (req, res) => {
               createdAt: now
             });
             const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
-            await sendMetaPurchase(minimalSess, server_ip, { value, quantity, charge });
+            await sendMetaPurchase(minimalSess, server_ip, { value, quantity, charge, test_event_code: testCode });
           }
         }
       }
@@ -990,6 +993,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
     if (!PIXEL_ID) { LAST_CAPI.initiate = { status: null, body: 'PIXEL_ID missing' }; return; }
     if (!META_CAPI_TOKEN) { LAST_CAPI.initiate = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
     sess = await enrichSessionMeta(sess);
+    const TEST = (opts && opts.test_event_code) || TEST_EVENT_CODE || '';
     const value = opts && typeof opts.value === 'number' ? opts.value : null;
     const quantity = opts && typeof opts.quantity === 'number' ? opts.quantity : 1;
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
@@ -1045,7 +1049,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
-    if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
+    if (TEST) payload.test_event_code = TEST;
     let resp = await postToMetaEvents(payload);
     if (resp && resp.status === 400) {
       const minimal = { data: [ stripNulls({
@@ -1055,7 +1059,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
         event_source_url,
         user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua })
       }) ] };
-      if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
+      if (TEST) minimal.test_event_code = TEST;
       resp = await postToMetaEvents(minimal);
     }
     LAST_CAPI.initiate = resp || null;
@@ -1073,6 +1077,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
     if (!PIXEL_ID) { LAST_CAPI.purchase = { status: null, body: 'PIXEL_ID missing' }; return; }
     if (!META_CAPI_TOKEN) { LAST_CAPI.purchase = { status: null, body: 'META_CAPI_TOKEN missing' }; return; }
     sess = await enrichSessionMeta(sess);
+    const TEST = (opts && opts.test_event_code) || TEST_EVENT_CODE || '';
     const value = opts && typeof opts.value === 'number' ? opts.value : null;
     const quantity = opts && typeof opts.quantity === 'number' ? opts.quantity : 1;
     const event_time = Math.floor((Date.parse(sess.timestamp || new Date().toISOString())) / 1000) || Math.floor(Date.now() / 1000);
@@ -1129,7 +1134,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
-    if (TEST_EVENT_CODE) payload.test_event_code = TEST_EVENT_CODE;
+    if (TEST) payload.test_event_code = TEST;
     let resp = await postToMetaEvents(payload);
     if (resp && resp.status === 400) {
       const minimal = { data: [ stripNulls({
@@ -1139,7 +1144,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
         event_source_url,
         user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua })
       }) ] };
-      if (TEST_EVENT_CODE) minimal.test_event_code = TEST_EVENT_CODE;
+      if (TEST) minimal.test_event_code = TEST;
       resp = await postToMetaEvents(minimal);
     }
     LAST_CAPI.purchase = resp || null;
