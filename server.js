@@ -895,7 +895,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
     const user_agent = (sess && sess.user_agent) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
     const fbp = (sess && sess.fbp) || null;
-    const fbc = (sess && sess.fbc) || null;
+    const fbc = (sess && sess.fbclid) ? ((sess && sess.fbc) || null) : null;
     const phone = (sess && sess.user_phone) ? String(sess.user_phone).replace(/[^0-9]/g, '') : null;
     const ph = phone ? sha256Hex(phone) : null;
     const ip = normalizeIp(server_ip || (sess && sess.server_ip)) || '8.8.8.8';
@@ -959,7 +959,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip2, client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'), fbp: sess.fbp || null, fbc: sess.fbc || null }),
+      user_data: stripNulls({ client_ip_address: ip2, client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'), fbp: sess.fbp || null, fbc: (sess.fbclid ? (sess.fbc || null) : null) }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt2] };
@@ -1041,7 +1041,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null, ph, em, fn, ln, external_id }),
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: (sess.fbclid ? (sess.fbc || null) : null), ph, em, fn, ln, external_id }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
@@ -1125,7 +1125,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null, ph, em, fn, ln, external_id }),
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: (sess.fbclid ? (sess.fbc || null) : null), ph, em, fn, ln, external_id }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
