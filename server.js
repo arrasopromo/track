@@ -603,12 +603,13 @@ const server = http.createServer(async (req, res) => {
         if (sessionQuery) {
           await db.collection('sessions').updateMany(
             sessionQuery,
-            { $set: { last_purchase_at: now, last_purchase_status: doc.status } }
+            { $set: { last_purchase_at: now, last_purchase_status: doc.status, has_purchase: true } }
           );
         }
 
         const minimalSess = { user_phone: doc.phone || null, client_ref: doc.client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: doc.timestamp, server_ip };
         await sendMetaPurchase(minimalSess, server_ip, { value: doc.value, quantity: 1 });
+        try { await setSessionFlags(minimalSess, { has_purchase: true }); } catch (_) {}
       }
       sendJson(res, 200, { ok: true });
     } catch (e) {
@@ -677,7 +678,7 @@ const server = http.createServer(async (req, res) => {
         if (sessQuery) {
           const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
-            const setFields = { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity };
+            const setFields = { last_initiate_checkout_at: now, last_charge_identifier: chargeDoc.identifier, last_charge_value: value, last_charge_quantity: quantity, has_initiate_checkout: true };
             if (isCompleted) Object.assign(setFields, { last_purchase_at: now, last_purchase_status: chargeDoc.status || 'COMPLETED', last_purchase_value: value });
             if (client_ref) await db.collection('sessions').updateOne({ client_ref }, { $set: setFields });
             else await db.collection('sessions').updateMany(sessQuery, { $set: setFields });
@@ -692,6 +693,7 @@ const server = http.createServer(async (req, res) => {
               last_charge_identifier: chargeDoc.identifier,
               last_charge_value: value,
               last_charge_quantity: quantity,
+              has_initiate_checkout: true,
               server_ip,
               createdAt: now
             };
@@ -769,9 +771,9 @@ const server = http.createServer(async (req, res) => {
           const sess = await db.collection('sessions').findOne(sessQuery);
           if (sess) {
             if (client_ref) {
-              await db.collection('sessions').updateOne({ client_ref }, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity } });
+              await db.collection('sessions').updateOne({ client_ref }, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity, has_purchase: true } });
             } else {
-              await db.collection('sessions').updateMany(sessQuery, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity } });
+              await db.collection('sessions').updateMany(sessQuery, { $set: { last_purchase_at: now, last_purchase_status: chargeDoc.status, last_purchase_value: value, last_charge_identifier: chargeDoc.identifier, last_charge_quantity: quantity, has_purchase: true } });
             }
             await sendMetaPurchase(sess, server_ip, { value, quantity, charge });
           } else {
@@ -783,6 +785,7 @@ const server = http.createServer(async (req, res) => {
               last_purchase_value: value,
               last_charge_identifier: chargeDoc.identifier,
               last_charge_quantity: quantity,
+              has_purchase: true,
               server_ip,
               createdAt: now
             });
@@ -865,6 +868,24 @@ function stripNulls(obj) {
   return out;
 }
 
+async function setSessionFlags(sess, fields) {
+  try {
+    if (!db || !sess || !fields) return;
+    const ors = [];
+    if (sess.client_ref) ors.push({ client_ref: sess.client_ref });
+    const phoneRaw = sess.user_phone ? String(sess.user_phone) : null;
+    const phoneDigits = phoneRaw ? String(phoneRaw).replace(/[^0-9]/g, '') : null;
+    if (phoneDigits) {
+      ors.push({ user_phone: phoneDigits });
+      ors.push({ user_phone: `+${phoneDigits}` });
+    }
+    if (sess.event_id) ors.push({ event_id: sess.event_id });
+    const query = ors.length ? { $or: ors } : null;
+    if (!query) return;
+    await db.collection('sessions').updateMany(query, { $set: fields });
+  } catch (_) {}
+}
+
 async function sendPixelPageView({ client_ref, server_ip }) {
   try {
     if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); LAST_CAPI.pageview = { status: null, body: 'PIXEL_ID missing' }; return; }
@@ -903,6 +924,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     }
     LAST_CAPI.pageview = resp || null;
     if (resp) console.log('[meta] PageView sent', resp.status, resp.body);
+    try { await setSessionFlags({ client_ref }, { has_pageview: true }); } catch (_) {}
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     console.warn('[meta] PageView failed', msg);
@@ -1038,6 +1060,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
     }
     LAST_CAPI.initiate = resp || null;
     if (resp) console.log('[meta] InitiateCheckout sent', resp.status, resp.body);
+    try { await setSessionFlags(sess, { has_initiate_checkout: true }); } catch (_) {}
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     console.warn('[meta] InitiateCheckout failed', msg);
@@ -1121,6 +1144,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
     }
     LAST_CAPI.purchase = resp || null;
     if (resp) console.log('[meta] Purchase sent', resp.status, resp.body);
+    try { await setSessionFlags(sess, { has_purchase: true }); } catch (_) {}
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
     console.warn('[meta] Purchase failed', msg);
