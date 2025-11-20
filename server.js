@@ -367,6 +367,24 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (pathname === '/debug/capi-ic-test' && req.method === 'GET') {
+    try {
+      if (!PIXEL_ID || !META_CAPI_TOKEN) return sendJson(res, 400, { ok: false, error: 'PIXEL_ID/META_CAPI_TOKEN ausentes' });
+      const server_ip = getIpFromHeaders(req);
+      const now = new Date();
+      const client_ref = url.searchParams.get('client_ref') || null;
+      const phone = url.searchParams.get('phone') || null;
+      const value = url.searchParams.get('value') ? Number(url.searchParams.get('value')) : null;
+      const quantity = url.searchParams.get('quantity') ? Number(url.searchParams.get('quantity')) : 1;
+      const testCode = url.searchParams.get('test_event_code') || null;
+      const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
+      await sendMetaInitiateCheckout(minimalSess, server_ip, { value, quantity, test_event_code: testCode });
+      return sendJson(res, 200, { ok: true, initiate: LAST_CAPI.initiate, payload: LAST_CAPI.initiate_payload });
+    } catch (e) {
+      return sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+  }
+
   if (pathname === '/debug/capi-status' && req.method === 'GET') {
     try {
       const status = {
@@ -706,6 +724,11 @@ const server = http.createServer(async (req, res) => {
             await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
             if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
           }
+        } else {
+          const minimalSess = { user_phone: phone || null, client_ref: client_ref || null, event_source_url: 'https://track.agenciaoppus.site/', timestamp: now.toISOString(), server_ip };
+          const enriched = await enrichSessionMeta(minimalSess);
+          await sendMetaInitiateCheckout(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
+          if (isCompleted) await sendMetaPurchase(enriched, server_ip, { value, quantity, charge, test_event_code: testCode });
         }
       }
 
@@ -1049,6 +1072,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
+    LAST_CAPI.initiate_payload = payload;
     if (TEST) payload.test_event_code = TEST;
     let resp = await postToMetaEvents(payload);
     if (resp && resp.status === 400) {
