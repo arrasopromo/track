@@ -912,6 +912,33 @@ async function setSessionFlags(sess, fields) {
   } catch (_) {}
 }
 
+async function enrichSessionMeta(sess) {
+  try {
+    if (!db || !sess) return sess;
+    const ors = [];
+    if (sess.client_ref) ors.push({ client_ref: sess.client_ref });
+    const phoneRaw = sess.user_phone ? String(sess.user_phone) : null;
+    const phoneDigits = phoneRaw ? String(phoneRaw).replace(/[^0-9]/g, '') : null;
+    if (phoneDigits) {
+      ors.push({ user_phone: phoneDigits });
+      ors.push({ user_phone: `+${phoneDigits}` });
+    }
+    const query = ors.length ? { $or: ors } : null;
+    if (!query) return sess;
+    const docs = await db.collection('sessions').find(query).sort({ createdAt: -1 }).limit(1).toArray();
+    const best = (docs && docs[0]) || null;
+    if (!best) return sess;
+    const out = Object.assign({}, sess);
+    const copy = ['fbp','fbc','user_agent','referrer','utm_source','utm_medium','utm_campaign','utm_content','utm_term','event_source_url','page_url','session_id'];
+    for (const k of copy) {
+      if (!out[k] && best[k]) out[k] = best[k];
+    }
+    return out;
+  } catch (_) {
+    return sess;
+  }
+}
+
 async function sendPixelPageView({ client_ref, server_ip }) {
   try {
     if (!PIXEL_ID) { console.warn('[meta] PageView skipped: PIXEL_ID missing'); LAST_CAPI.pageview = { status: null, body: 'PIXEL_ID missing' }; return; }
