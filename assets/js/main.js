@@ -170,6 +170,12 @@
     var cfg = window.TRACK_CONFIG || {};
     if (window.tracking && window.tracking.ensureMetaCookies) window.tracking.ensureMetaCookies();
 
+    var data0 = window.tracking && window.tracking.getTrackingData ? window.tracking.getTrackingData() : {};
+    if (cfg.webhookUrl) {
+      var pvPayload = Object.assign({}, data0, { event_name: 'pageview_store', event_id: uuid(), event_source_url: window.location.href });
+      postWebhook(cfg.webhookUrl, pvPayload);
+    }
+
     var btn = document.getElementById('whatsapp-cta');
     if (btn) {
       btn.addEventListener('click', function (e) {
