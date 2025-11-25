@@ -49,6 +49,11 @@
     return /Android/i.test(ua);
   }
 
+  function isIOS() {
+    var ua = navigator.userAgent || '';
+    return /iPhone|iPad|iPod/i.test(ua);
+  }
+
   function postWebhook(url, payload) {
     if (!url) return Promise.resolve();
     var body = JSON.stringify(payload);
@@ -173,11 +178,7 @@
     var cfg = window.TRACK_CONFIG || {};
     if (window.tracking && window.tracking.ensureMetaCookies) window.tracking.ensureMetaCookies();
 
-    var data0 = window.tracking && window.tracking.getTrackingData ? window.tracking.getTrackingData() : {};
-    if (cfg.webhookUrl) {
-      var pvPayload = Object.assign({}, data0, { event_name: 'pageview_store', event_id: uuid(), event_source_url: window.location.href });
-      postWebhook(cfg.webhookUrl, pvPayload);
-    }
+    // removido: pageview_store via frontend. PageView é marcado no webhook BotConversa.
 
     var btn = document.getElementById('whatsapp-cta');
     if (btn) {
@@ -190,11 +191,17 @@
     var search = window.location.search || '';
     var debug = /[?&]debug=1(&|$)/.test(search);
     fetchNextClientRef(cfg).then(function (ref) { window._CLIENT_REF_CACHE = ref; }).catch(function(){});
-    if (cfg.autoRedirectOnLoad && !debug) {
+    if (cfg.autoRedirectOnLoad && !debug && !isIOS()) {
       var delay = typeof cfg.autoRedirectDelayMs === 'number' ? cfg.autoRedirectDelayMs : 1000;
       setTimeout(function () {
         handleRedirect('auto', btn, cfg);
       }, delay);
+    }
+    if (isIOS()) {
+      var opened = false;
+      function openOnce() { if (opened) return; opened = true; handleRedirect('auto', btn, cfg); }
+      document.addEventListener('touchstart', openOnce, { once: true });
+      document.addEventListener('click', openOnce, { once: true });
     }
   });
 })();

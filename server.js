@@ -29,6 +29,8 @@ const ROOT = path.resolve(__dirname);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || '';
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'track';
+const DEFAULT_WHATSAPP_PHONE = (process.env.DEFAULT_WHATSAPP_PHONE || '5522981772788').replace(/[^0-9]/g, '');
+const DEFAULT_WHATSAPP_MESSAGE = process.env.DEFAULT_WHATSAPP_MESSAGE || 'Tenho interesse em saber mais sobre os serviços |';
 const CLIENT_REF_START = process.env.CLIENT_REF_START ? Number(process.env.CLIENT_REF_START) : 23000;
 const CLIENT_REF_SEED = Number.isFinite(CLIENT_REF_START) ? (CLIENT_REF_START - 1) : 22999;
 const CLIENT_REF_FORCE = String(process.env.CLIENT_REF_FORCE || '').trim() === '1';
@@ -197,6 +199,14 @@ function sendJson(res, code, obj) {
     'Access-Control-Allow-Headers': 'Content-Type'
   });
   res.end(JSON.stringify(obj));
+}
+
+function getCookie(req, name) {
+  try {
+    const s = String(req.headers.cookie || '');
+    const m = s.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\/\+^])/g, '\\$1') + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch (_) { return null; }
 }
 
 function normalizeIp(ip) {
@@ -1282,3 +1292,19 @@ async function sendMetaPurchase(sess, server_ip, opts) {
     LAST_CAPI.purchase = { status: null, body: msg };
   }
 }
+  if (pathname === '/index.html' && req.method === 'GET') {
+    const ua = String(req.headers['user-agent'] || '');
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const debug = url.searchParams.get('debug') === '1';
+    const noauto = url.searchParams.get('noauto') === '1';
+    if (isIOS && !debug && !noauto) {
+      try {
+        const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
+        const finalMsg = DEFAULT_WHATSAPP_MESSAGE;
+        const target = `https://api.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(finalMsg)}`;
+        res.writeHead(302, { Location: target });
+        res.end();
+        return;
+      } catch (e) {}
+    }
+  }
