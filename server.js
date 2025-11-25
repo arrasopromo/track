@@ -328,11 +328,17 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/whatsapp' && req.method === 'GET') {
     try {
       const ua = String(req.headers['user-agent'] || '');
+      const isAndroid = /Android/i.test(ua);
+      const isIOS = /iPhone|iPad|iPod/i.test(ua);
       const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
       const text = url.searchParams.get('text') || DEFAULT_WHATSAPP_MESSAGE;
       const apiUrl = `https://api.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}`;
-      res.writeHead(302, { Location: apiUrl });
-      res.end();
+      const deep = isAndroid
+        ? (`intent://send/?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=${encodeURIComponent('https://wa.me/' + phone + '?text=' + encodeURIComponent(text))};end`)
+        : (`whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}`);
+      const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Whatsapp</title><style>html,body{height:100%} body{margin:0;background:#fff;display:flex;align-items:center;justify-content:center} .msg{font-family:system-ui,Arial;color:#111;font-size:14px}</style></head><body><div class="msg">Abrindo WhatsApp…</div><script>(function(){var api='${apiUrl}';var deep='${deep}';var isAndroid=${isAndroid ? 'true' : 'false'};var isIOS=${isIOS ? 'true' : 'false'};if(isIOS){location.href=deep;return;}try{var w=window.open(api,'_blank');}catch(e){}setTimeout(function(){location.href=deep;},900);})();</script></body></html>`;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html);
       return;
     } catch (e) {
       return sendJson(res, 400, { ok: false, error: String(e.message || e) });
