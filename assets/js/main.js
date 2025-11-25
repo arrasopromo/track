@@ -130,25 +130,16 @@
     var baseMsg = cfg.defaultMessage || ''; // force fixed message from config
     var data = window.tracking && window.tracking.getTrackingData ? window.tracking.getTrackingData() : {};
     var eventId = uuid();
-
-    function ensureClientRefFirst() {
-      return fetchNextClientRef(cfg).then(function (clientRef) {
-        if (clientRef) return clientRef;
-        var prePayload = {
-          event_name: 'whatsapp_preflight',
-          event_id: eventId,
-          whatsapp_destination: phone,
-          message: baseMsg,
-          event_source_url: window.location.href
-        };
-        return postWebhookAndRead(cfg.webhookUrl, prePayload).then(function (resp) {
-          console.log('[client] track-preflight resp =>', resp);
-          return (resp && resp.client_ref) ? resp.client_ref : null;
-        });
-      });
+    var clientRef = window._CLIENT_REF_CACHE || null;
+    function ensureClientRefNow() {
+      if (clientRef) return Promise.resolve(clientRef);
+      return fetchNextClientRef(cfg).then(function (ref) {
+        clientRef = ref || null;
+        window._CLIENT_REF_CACHE = clientRef;
+        return clientRef;
+      }).catch(function(){ return null; });
     }
-
-    ensureClientRefFirst().then(function (clientRef) {
+    ensureClientRefNow().then(function(){
       var finalMsgBase = setClientRefInMessage(baseMsg, clientRef) || baseMsg;
       if (cfg.appendTrackingTokenToMessage) {
         var token = shortEventToken(eventId);
@@ -156,25 +147,25 @@
       }
       var finalMsg = buildMessage(finalMsgBase, data, !!cfg.appendUtmToMessage);
       var url = isMobile() ? (isAndroid() ? androidIntentLink(phone, finalMsg) : waDeepLink(phone, finalMsg)) : waLink(phone, finalMsg);
-
-      console.log('[client] finalMsgBase=', finalMsgBase, 'clientRef=', clientRef, 'url=', url);
-
-      return getClientIp().then(function (ip) {
-        var ref = parseClientRef(finalMsgBase) || {};
-        var payload = Object.assign({}, data, {
-          event_name: triggerType === 'auto' ? 'whatsapp_auto_redirect' : 'whatsapp_click',
-          event_id: eventId,
-          whatsapp_destination: phone,
-          message: finalMsgBase,
-          message_reference: ref.message_reference || (clientRef ? ('cliente#' + clientRef) : null),
-          client_ref: ref.client_ref || clientRef || null,
-          event_source_url: window.location.href,
-          client_ip: ip
-        });
-        return postWebhook(cfg.webhookUrl, payload);
-      }).finally(function () {
-        window.location.replace(url);
+      var ref = parseClientRef(finalMsgBase) || {};
+      var payload = Object.assign({}, data, {
+        event_name: triggerType === 'auto' ? 'whatsapp_auto_redirect' : 'whatsapp_click',
+        event_id: eventId,
+        whatsapp_destination: phone,
+        message: finalMsgBase,
+        message_reference: ref.message_reference || (clientRef ? ('cliente#' + clientRef) : null),
+        client_ref: ref.client_ref || clientRef || null,
+        event_source_url: window.location.href
       });
+      try {
+        if (navigator.sendBeacon) {
+          var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+          navigator.sendBeacon(cfg.webhookUrl, blob);
+        } else {
+          fetch(cfg.webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), keepalive: true, mode: 'cors' }).catch(function(){});
+        }
+      } catch (e) {}
+      window.location.replace(url);
     });
   }
 
@@ -198,6 +189,7 @@
 
     var search = window.location.search || '';
     var debug = /[?&]debug=1(&|$)/.test(search);
+    fetchNextClientRef(cfg).then(function (ref) { window._CLIENT_REF_CACHE = ref; }).catch(function(){});
     if (cfg.autoRedirectOnLoad && !debug) {
       var delay = typeof cfg.autoRedirectDelayMs === 'number' ? cfg.autoRedirectDelayMs : 1000;
       setTimeout(function () {
