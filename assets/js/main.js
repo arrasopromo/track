@@ -146,7 +146,7 @@
         if (token) finalMsgBase = finalMsgBase + ' #e:' + token;
       }
       var finalMsg = buildMessage(finalMsgBase, data, !!cfg.appendUtmToMessage);
-      var url = isMobile() ? (isAndroid() ? androidIntentLink(phone, finalMsg) : waDeepLink(phone, finalMsg)) : waLink(phone, finalMsg);
+      var url = isMobile() ? (isAndroid() ? androidIntentLink(phone, finalMsg) : waLink(phone, finalMsg)) : waLink(phone, finalMsg);
       var ref = parseClientRef(finalMsgBase) || {};
       var payload = Object.assign({}, data, {
         event_name: triggerType === 'auto' ? 'whatsapp_auto_redirect' : 'whatsapp_click',
