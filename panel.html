@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Conversões</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; color: #222; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; flex: 1 1 320px; }
+    .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    label { font-size: 12px; color: #555; }
+    input { padding: 6px 8px; }
+    button { padding: 6px 10px; cursor: pointer; }
+    canvas { max-width: 100%; height: 280px; }
+    .legend { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; row-gap: 6px; margin-top: 8px; font-size: 12px; }
+    .sw { width: 12px; height: 12px; border-radius: 2px; }
+    .funnel { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .bar { background: #eee; height: 24px; border-radius: 12px; position: relative; }
+    .fill { background: #4caf50; height: 100%; border-radius: 12px; }
+    .label { position: absolute; left: 8px; top: 3px; font-size: 12px; color: #111; }
+  </style>
+</head>
+<body>
+  <h1>Painel de Conversões</h1>
+  <div class="controls">
+    <label>Início <input type="date" id="start"></label>
+    <label>Fim <input type="date" id="end"></label>
+    <button id="load">Carregar</button>
+  </div>
+  <div class="row">
+    <div class="card">
+      <strong>PageView por campanha</strong>
+      <canvas id="piePV" width="320" height="280"></canvas>
+      <div id="legPV" class="legend"></div>
+    </div>
+    <div class="card">
+      <strong>InitiateCheckout por campanha</strong>
+      <canvas id="pieIC" width="320" height="280"></canvas>
+      <div id="legIC" class="legend"></div>
+    </div>
+    <div class="card">
+      <strong>Purchase por campanha</strong>
+      <canvas id="piePU" width="320" height="280"></canvas>
+      <div id="legPU" class="legend"></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:16px;">
+    <div class="card" style="flex:1 1 100%">
+      <strong>Funil</strong>
+      <div class="funnel" id="funnel"></div>
+      <div id="totals" style="margin-top:8px; font-size:12px;"></div>
+    </div>
+  </div>
+  <script>
+    function fmtDateInput(d) { const s = new Date(d); const y=s.getFullYear(); const m=String(s.getMonth()+1).padStart(2,'0'); const dd=String(s.getDate()).padStart(2,'0'); return y+'-'+m+'-'+dd; }
+    function colors(n){ const out=[]; const base=["#4caf50","#2196f3","#ff9800","#9c27b0","#f44336","#00bcd4","#8bc34a","#795548","#3f51b5","#ff5722"]; for(let i=0;i<n;i++){ out.push(base[i%base.length]); } return out; }
+    function drawPie(canvas, data){ const ctx=canvas.getContext('2d'); const w=canvas.width, h=canvas.height; ctx.clearRect(0,0,w,h); const total=data.reduce((s,x)=>s+x.value,0)||1; let start= -Math.PI/2; const cols=colors(data.length); data.forEach((d,i)=>{ const ang=(d.value/total)*Math.PI*2; ctx.beginPath(); ctx.moveTo(w/2,h/2); ctx.arc(w/2,h/2,Math.min(w,h)/2-10,start,start+ang); ctx.closePath(); ctx.fillStyle=cols[i]; ctx.fill(); start+=ang; }); return cols; }
+    function setLegend(el, data, cols){ el.innerHTML=''; data.forEach((d,i)=>{ const sw=document.createElement('div'); sw.className='sw'; sw.style.background=cols[i]; const name=document.createElement('div'); name.textContent=d.label; const val=document.createElement('div'); val.textContent=d.value; el.appendChild(sw); el.appendChild(name); el.appendChild(val); }); }
+    function setFunnel(el, f){ el.innerHTML=''; const a=document.createElement('div'); a.className='bar'; const fa=document.createElement('div'); fa.className='fill'; fa.style.width=(f.pv_to_ic||0)+'%'; const la=document.createElement('div'); la.className='label'; la.textContent='PageView → IC ('+(f.pv_to_ic||0)+'%)'; a.appendChild(fa); a.appendChild(la); const b=document.createElement('div'); b.className='bar'; const fb=document.createElement('div'); fb.className='fill'; fb.style.width=(f.ic_to_purchase||0)+'%'; const lb=document.createElement('div'); lb.className='label'; lb.textContent='IC → Purchase ('+(f.ic_to_purchase||0)+'%)'; b.appendChild(fb); b.appendChild(lb); el.appendChild(a); el.appendChild(b); }
+    function load(){ const s=document.getElementById('start').value; const e=document.getElementById('end').value; const qs=[]; if(s) qs.push('start='+encodeURIComponent(s)); if(e) qs.push('end='+encodeURIComponent(e)); const url='/api/stats'+(qs.length?'?'+qs.join('&'):''); fetch(url).then(r=>r.json()).then(j=>{ const cams=j.campaigns||[]; const pvData=cams.map(c=>({ label:c.utm_campaign, value:c.pageview||0 })); const icData=cams.map(c=>({ label:c.utm_campaign, value:c.ic||0 })); const puData=cams.map(c=>({ label:c.utm_campaign, value:c.purchase||0 })); const colsPV=drawPie(document.getElementById('piePV'), pvData); setLegend(document.getElementById('legPV'), pvData, colsPV); const colsIC=drawPie(document.getElementById('pieIC'), icData); setLegend(document.getElementById('legIC'), icData, colsIC); const colsPU=drawPie(document.getElementById('piePU'), puData); setLegend(document.getElementById('legPU'), puData, colsPU); setFunnel(document.getElementById('funnel'), j.funnel||{}); const t=j.totals||{}; document.getElementById('totals').textContent='PageView: '+(t.pageview||0)+' | IC: '+(t.ic||0)+' | Purchase: '+(t.purchase||0); }).catch(()=>{}); }
+    document.getElementById('load').addEventListener('click', load);
+    const today=new Date(); const start=new Date(today.getTime()-7*86400000); document.getElementById('start').value=fmtDateInput(start); document.getElementById('end').value=fmtDateInput(today); load();
+  </script>
+</body>
+</html>

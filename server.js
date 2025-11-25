@@ -287,6 +287,44 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (pathname === '/api/stats' && req.method === 'GET') {
+    try {
+      if (!db) return sendJson(res, 400, { ok: false, error: 'MongoDB não configurado (MONGO_URI ausente)' });
+      const endStr = url.searchParams.get('end');
+      const startStr = url.searchParams.get('start');
+      const end = endStr ? new Date(endStr) : new Date();
+      const start = startStr ? new Date(startStr) : new Date(end.getTime() - 30 * 86400000);
+      start.setHours(0,0,0,0);
+      end.setHours(23,59,59,999);
+      const range = { $gte: start, $lte: end };
+      const pvAgg = await db.collection('sessions').aggregate([
+        { $match: { has_pageview: true, createdAt: range } },
+        { $group: { _id: { $ifNull: ['$utm_campaign', '(sem campanha)'] }, count: { $sum: 1 } } }
+      ]).toArray();
+      const icAgg = await db.collection('sessions').aggregate([
+        { $match: { has_initiate_checkout: true, last_initiate_checkout_at: range } },
+        { $group: { _id: { $ifNull: ['$utm_campaign', '(sem campanha)'] }, count: { $sum: 1 } } }
+      ]).toArray();
+      const puAgg = await db.collection('sessions').aggregate([
+        { $match: { has_purchase: true, last_purchase_at: range } },
+        { $group: { _id: { $ifNull: ['$utm_campaign', '(sem campanha)'] }, count: { $sum: 1 } } }
+      ]).toArray();
+      const map = {};
+      for (const r of pvAgg) { const k = r._id; if (!map[k]) map[k] = { utm_campaign: k, pageview: 0, ic: 0, purchase: 0 }; map[k].pageview += r.count; }
+      for (const r of icAgg) { const k = r._id; if (!map[k]) map[k] = { utm_campaign: k, pageview: 0, ic: 0, purchase: 0 }; map[k].ic += r.count; }
+      for (const r of puAgg) { const k = r._id; if (!map[k]) map[k] = { utm_campaign: k, pageview: 0, ic: 0, purchase: 0 }; map[k].purchase += r.count; }
+      const campaigns = Object.values(map).sort((a,b) => (b.purchase - a.purchase) || (b.ic - a.ic) || (b.pageview - a.pageview));
+      const pvTotal = pvAgg.reduce((s,r)=>s+r.count,0);
+      const icTotal = icAgg.reduce((s,r)=>s+r.count,0);
+      const puTotal = puAgg.reduce((s,r)=>s+r.count,0);
+      const pvToIc = pvTotal ? Math.round((icTotal / pvTotal) * 1000) / 10 : 0;
+      const icToPu = icTotal ? Math.round((puTotal / icTotal) * 1000) / 10 : 0;
+      return sendJson(res, 200, { ok: true, range: { start: start.toISOString(), end: end.toISOString() }, totals: { pageview: pvTotal, ic: icTotal, purchase: puTotal }, funnel: { pv_to_ic: pvToIc, ic_to_purchase: icToPu }, campaigns });
+    } catch (e) {
+      return sendJson(res, 400, { ok: false, error: String(e.message || e) });
+    }
+  }
+
   // API: salvar sessão de clique (com número sequencial por cliente)
   if (pathname === '/api/track' && req.method === 'POST') {
     try {
@@ -919,6 +957,15 @@ function stripNulls(obj) {
   return out;
 }
 
+function resolveFbc(sess) {
+  const f = (sess && sess.fbc) || null;
+  if (f) return f;
+  const fbclid = (sess && sess.fbclid) || null;
+  if (!fbclid) return null;
+  const ts = Date.now();
+  return 'fb.1.' + ts + '.' + fbclid;
+}
+
 async function setSessionFlags(sess, fields) {
   try {
     if (!db || !sess || !fields) return;
@@ -956,7 +1003,7 @@ async function enrichSessionMeta(sess) {
     const best = (docs && docs[0]) || null;
     if (!best) return sess;
     const out = Object.assign({}, sess);
-    const copy = ['fbp','fbc','user_agent','referrer','utm_source','utm_medium','utm_campaign','utm_content','utm_term','event_source_url','page_url','session_id'];
+    const copy = ['fbp','fbc','fbclid','user_agent','referrer','utm_source','utm_medium','utm_campaign','utm_content','utm_term','event_source_url','page_url','session_id'];
     for (const k of copy) {
       if (!out[k] && best[k]) out[k] = best[k];
     }
@@ -975,7 +1022,7 @@ async function sendPixelPageView({ client_ref, server_ip }) {
     const event_source_url = (sess && (sess.event_source_url || sess.page_url)) || 'https://track.agenciaoppus.site/';
     const user_agent = (sess && sess.user_agent) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
     const fbp = (sess && sess.fbp) || null;
-    const fbc = (sess && sess.fbc) || null;
+    const fbc = resolveFbc(sess);
     const phone = (sess && sess.user_phone) ? String(sess.user_phone).replace(/[^0-9]/g, '') : null;
     const ph = phone ? sha256Hex(phone) : null;
     const ip = normalizeIp(server_ip || (sess && sess.server_ip)) || '8.8.8.8';
@@ -1039,7 +1086,7 @@ async function sendMetaContactFromSession(sess, server_ip) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip2, client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'), fbp: sess.fbp || null, fbc: sess.fbc || null }),
+      user_data: stripNulls({ client_ip_address: ip2, client_user_agent: (sess.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'), fbp: sess.fbp || null, fbc: resolveFbc(sess) }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt2] };
@@ -1122,7 +1169,7 @@ async function sendMetaInitiateCheckout(sess, server_ip, opts) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null, ph, em, fn, ln, external_id }),
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: resolveFbc(sess), ph, em, fn, ln, external_id }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };
@@ -1208,7 +1255,7 @@ async function sendMetaPurchase(sess, server_ip, opts) {
       event_time,
       action_source: 'website',
       event_source_url,
-      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: sess.fbc || null, ph, em, fn, ln, external_id }),
+      user_data: stripNulls({ client_ip_address: ip, client_user_agent: ua, fbp: sess.fbp || null, fbc: resolveFbc(sess), ph, em, fn, ln, external_id }),
       custom_data: Object.keys(custom).length ? custom : undefined
     });
     const payload = { data: [evt] };

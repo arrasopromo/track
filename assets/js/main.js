@@ -32,9 +32,21 @@
     return 'whatsapp://send?phone=' + clean + '&text=' + encodeURIComponent(message || '');
   }
 
+  function androidIntentLink(phone, message) {
+    var clean = (phone || '').replace(/[^0-9]/g, '');
+    var txt = encodeURIComponent(message || '');
+    var fb = encodeURIComponent('https://wa.me/' + clean + '?text=' + txt);
+    return 'intent://send/?phone=' + clean + '&text=' + txt + '#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=' + fb + ';end';
+  }
+
   function isMobile() {
     var ua = navigator.userAgent || '';
     return /Android|iPhone|iPad|iPod|Windows Phone/i.test(ua);
+  }
+
+  function isAndroid() {
+    var ua = navigator.userAgent || '';
+    return /Android/i.test(ua);
   }
 
   function postWebhook(url, payload) {
@@ -143,7 +155,7 @@
         if (token) finalMsgBase = finalMsgBase + ' #e:' + token;
       }
       var finalMsg = buildMessage(finalMsgBase, data, !!cfg.appendUtmToMessage);
-      var url = isMobile() ? waDeepLink(phone, finalMsg) : waLink(phone, finalMsg);
+      var url = isMobile() ? (isAndroid() ? androidIntentLink(phone, finalMsg) : waDeepLink(phone, finalMsg)) : waLink(phone, finalMsg);
 
       console.log('[client] finalMsgBase=', finalMsgBase, 'clientRef=', clientRef, 'url=', url);
 
@@ -161,7 +173,7 @@
         });
         return postWebhook(cfg.webhookUrl, payload);
       }).finally(function () {
-        window.location.href = url;
+        window.location.replace(url);
       });
     });
   }
