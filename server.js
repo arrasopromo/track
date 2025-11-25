@@ -259,8 +259,64 @@ const server = http.createServer(async (req, res) => {
     const noauto = url.searchParams.get('noauto') === '1';
     if (isIOS && !debug && !noauto) {
       try {
+        const server_ip = getIpFromHeaders(req);
+        const now = new Date();
         const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
-        const finalMsg = DEFAULT_WHATSAPP_MESSAGE;
+        const fbclid = url.searchParams.get('fbclid') || null;
+        const fbpCookie = getCookie(req, '_fbp');
+        const fbcCookie = getCookie(req, '_fbc');
+        const fbp = fbpCookie || ('fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 10000000000));
+        const fbc = fbcCookie || (fbclid ? ('fb.1.' + Date.now() + '.' + fbclid) : null);
+        const session_id = (crypto.randomUUID ? ('sid.' + crypto.randomUUID()) : ('sid.' + Date.now().toString(16) + '.' + Math.floor(Math.random() * 1e12).toString(16)));
+        let client_ref = null;
+        if (db) {
+          const seqRes = await db.collection('counters').findOneAndUpdate(
+            { _id: 'global:client_ref' },
+            { $inc: { seq: 1 }, $setOnInsert: { createdAt: now } },
+            { upsert: true, returnDocument: 'after' }
+          );
+          client_ref = (seqRes && seqRes.value && seqRes.value.seq) ? String(seqRes.value.seq) : null;
+          const doc = {
+            event_name: 'whatsapp_auto_redirect',
+            event_id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            client_ref,
+            utm_source: url.searchParams.get('utm_source') || null,
+            utm_medium: url.searchParams.get('utm_medium') || null,
+            utm_campaign: url.searchParams.get('utm_campaign') || null,
+            utm_content: url.searchParams.get('utm_content') || null,
+            utm_term: url.searchParams.get('utm_term') || null,
+            fbclid,
+            fbp,
+            fbc,
+            session_id,
+            page_url: `http://${req.headers.host}${req.url}`,
+            event_source_url: `http://${req.headers.host}${req.url}`,
+            user_agent: ua,
+            referrer: req.headers['referer'] || null,
+            server_ip,
+            createdAt: now
+          };
+          await db.collection('sessions').updateOne(
+            { event_id: doc.event_id },
+            { $set: doc, $setOnInsert: { insertedAt: now } },
+            { upsert: true }
+          );
+        }
+        let baseMsg = DEFAULT_WHATSAPP_MESSAGE || '';
+        if (client_ref) baseMsg = baseMsg ? (baseMsg + ' cliente#' + client_ref) : ('cliente#' + client_ref);
+        const lines = [];
+        const utm_source = url.searchParams.get('utm_source') || null;
+        const utm_medium = url.searchParams.get('utm_medium') || null;
+        const utm_campaign = url.searchParams.get('utm_campaign') || null;
+        const utm_content = url.searchParams.get('utm_content') || null;
+        const utm_term = url.searchParams.get('utm_term') || null;
+        if (utm_source) lines.push('utm_source=' + utm_source);
+        if (utm_medium) lines.push('utm_medium=' + utm_medium);
+        if (utm_campaign) lines.push('utm_campaign=' + utm_campaign);
+        if (utm_content) lines.push('utm_content=' + utm_content);
+        if (utm_term) lines.push('utm_term=' + utm_term);
+        if (fbclid) lines.push('fbclid=' + fbclid);
+        const finalMsg = baseMsg + (lines.length ? '\n\n' + lines.join('\n') : '');
         const target = `https://api.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(finalMsg)}`;
         res.writeHead(302, { Location: target });
         res.end();
