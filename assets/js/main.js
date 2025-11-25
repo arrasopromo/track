@@ -191,17 +191,11 @@
     var search = window.location.search || '';
     var debug = /[?&]debug=1(&|$)/.test(search);
     fetchNextClientRef(cfg).then(function (ref) { window._CLIENT_REF_CACHE = ref; }).catch(function(){});
-    if (cfg.autoRedirectOnLoad && !debug && !isIOS()) {
+    if (cfg.autoRedirectOnLoad && !debug) {
       var delay = typeof cfg.autoRedirectDelayMs === 'number' ? cfg.autoRedirectDelayMs : 1000;
       setTimeout(function () {
         handleRedirect('auto', btn, cfg);
       }, delay);
-    }
-    if (isIOS()) {
-      var opened = false;
-      function openOnce() { if (opened) return; opened = true; handleRedirect('auto', btn, cfg); }
-      document.addEventListener('touchstart', openOnce, { once: true });
-      document.addEventListener('click', openOnce, { once: true });
     }
   });
 })();

@@ -252,99 +252,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (pathname === '/index.html' && req.method === 'GET') {
-    const ua = String(req.headers['user-agent'] || '');
-    const isIOS = /iPhone|iPad|iPod/i.test(ua);
-    const debug = url.searchParams.get('debug') === '1';
-    const noauto = url.searchParams.get('noauto') === '1';
-    if (isIOS && !debug && !noauto) {
-      try {
-        const server_ip = getIpFromHeaders(req);
-        const now = new Date();
-        const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
-        const fbclid = url.searchParams.get('fbclid') || null;
-        const fbpCookie = getCookie(req, '_fbp');
-        const fbcCookie = getCookie(req, '_fbc');
-        const fbp = fbpCookie || ('fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 10000000000));
-        const fbc = fbcCookie || (fbclid ? ('fb.1.' + Date.now() + '.' + fbclid) : null);
-        const session_id = (crypto.randomUUID ? ('sid.' + crypto.randomUUID()) : ('sid.' + Date.now().toString(16) + '.' + Math.floor(Math.random() * 1e12).toString(16)));
-        let client_ref = null;
-        if (db) {
-          const seqRes = await db.collection('counters').findOneAndUpdate(
-            { _id: 'global:client_ref' },
-            { $inc: { seq: 1 }, $setOnInsert: { createdAt: now } },
-            { upsert: true, returnDocument: 'after' }
-          );
-          client_ref = (seqRes && seqRes.value && seqRes.value.seq) ? String(seqRes.value.seq) : null;
-          const doc = {
-            event_name: 'whatsapp_auto_redirect',
-            event_id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-            client_ref,
-            utm_source: url.searchParams.get('utm_source') || null,
-            utm_medium: url.searchParams.get('utm_medium') || null,
-            utm_campaign: url.searchParams.get('utm_campaign') || null,
-            utm_content: url.searchParams.get('utm_content') || null,
-            utm_term: url.searchParams.get('utm_term') || null,
-            fbclid,
-            fbp,
-            fbc,
-            session_id,
-            page_url: `http://${req.headers.host}${req.url}`,
-            event_source_url: `http://${req.headers.host}${req.url}`,
-            user_agent: ua,
-            referrer: req.headers['referer'] || null,
-            server_ip,
-            createdAt: now
-          };
-          await db.collection('sessions').updateOne(
-            { event_id: doc.event_id },
-            { $set: doc, $setOnInsert: { insertedAt: now } },
-            { upsert: true }
-          );
-        }
-        let baseMsg = DEFAULT_WHATSAPP_MESSAGE || '';
-        if (client_ref) baseMsg = baseMsg ? (baseMsg + ' cliente#' + client_ref) : ('cliente#' + client_ref);
-        const lines = [];
-        const utm_source = url.searchParams.get('utm_source') || null;
-        const utm_medium = url.searchParams.get('utm_medium') || null;
-        const utm_campaign = url.searchParams.get('utm_campaign') || null;
-        const utm_content = url.searchParams.get('utm_content') || null;
-        const utm_term = url.searchParams.get('utm_term') || null;
-        if (utm_source) lines.push('utm_source=' + utm_source);
-        if (utm_medium) lines.push('utm_medium=' + utm_medium);
-        if (utm_campaign) lines.push('utm_campaign=' + utm_campaign);
-        if (utm_content) lines.push('utm_content=' + utm_content);
-        if (utm_term) lines.push('utm_term=' + utm_term);
-        if (fbclid) lines.push('fbclid=' + fbclid);
-        const finalMsg = baseMsg + (lines.length ? '\n\n' + lines.join('\n') : '');
-        const target = `/whatsapp?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(finalMsg)}`;
-        res.writeHead(302, { Location: target });
-        res.end();
-        return;
-      } catch (e) {}
-    }
-  }
+  // index.html: sem redirecionamento automático server-side; o cliente controla o fluxo com delay
 
   if (pathname === '/whatsapp' && req.method === 'GET') {
     try {
       const ua = String(req.headers['user-agent'] || '');
-      const isAndroid = /Android/i.test(ua);
-      const isIOS = /iPhone|iPad|iPod/i.test(ua);
-      const isMobile = /Android|iPhone|iPad|iPod|Windows Phone/i.test(ua);
       const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
       const text = url.searchParams.get('text') || DEFAULT_WHATSAPP_MESSAGE;
       const apiUrl = `https://api.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}`;
-      const deep = isAndroid
-        ? (`intent://send/?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=${encodeURIComponent('https://wa.me/' + phone + '?text=' + encodeURIComponent(text))};end`)
-        : (`whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}`);
-      if (!isMobile) {
-        res.writeHead(302, { Location: apiUrl });
-        res.end();
-        return;
-      }
-      const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Whatsapp</title><style>html,body{height:100%} body{margin:0;background:#fff} .wrap{max-width:640px;margin:20px auto;padding:16px} .brand{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-family:system-ui,Arial} .logo{width:24px;height:24px;border-radius:4px;background:#25D366;display:inline-block} .title{font-weight:600} .card{border:1px solid #eee;border-radius:12px;padding:16px;font-family:system-ui,Arial;color:#111} .bubble{background:#f4f5f6;border-radius:12px;padding:12px;margin:12px 0;color:#333;font-size:14px;word-break:break-word}</style></head><body><div class="wrap"><div class="brand"><span class="logo"></span><span class="title">WhatsApp</span></div><div class="card"><div style="font-weight:600; margin-bottom:8px">Abrindo conversa no WhatsApp…</div><div class="bubble">${text.replace(/</g,'&lt;')}</div></div></div><script>(function(){var deep='${deep}';setTimeout(function(){location.href=deep;},900);})();</script></body></html>`;
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
+      res.writeHead(302, { Location: apiUrl });
+      res.end();
       return;
     } catch (e) {
       return sendJson(res, 400, { ok: false, error: String(e.message || e) });
