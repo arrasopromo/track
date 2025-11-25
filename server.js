@@ -1309,19 +1309,3 @@ async function sendMetaPurchase(sess, server_ip, opts) {
     LAST_CAPI.purchase = { status: null, body: msg };
   }
 }
-  if (pathname === '/index.html' && req.method === 'GET') {
-    const ua = String(req.headers['user-agent'] || '');
-    const isIOS = /iPhone|iPad|iPod/i.test(ua);
-    const debug = url.searchParams.get('debug') === '1';
-    const noauto = url.searchParams.get('noauto') === '1';
-    if (isIOS && !debug && !noauto) {
-      try {
-        const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
-        const finalMsg = DEFAULT_WHATSAPP_MESSAGE;
-        const target = `https://api.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(finalMsg)}`;
-        res.writeHead(302, { Location: target });
-        res.end();
-        return;
-      } catch (e) {}
-    }
-  }
