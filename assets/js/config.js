@@ -1,8 +1,8 @@
 window.TRACK_CONFIG = {
   webhookUrl: '/api/track',
-  defaultWhatsAppPhone: '5522981772788',
+  defaultWhatsAppPhone: '554797086876',
   defaultMessage: 'Tenho interesse em saber mais sobre os serviços |',
-  appendUtmToMessage: false,
+  appendUtmToMessage: true,
   autoRedirectOnLoad: true,
   autoRedirectDelayMs: 2000,
   pixelId: '1019661457030791'

@@ -352,7 +352,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // API: salvar sessão de clique (com número sequencial por cliente)
+  // API: salvar sessão de clique (com número sequencial por cliente) + disparo de CAPI
   if (pathname === '/api/track' && req.method === 'POST') {
     try {
       const body = await readJson(req);
@@ -400,6 +400,11 @@ const server = http.createServer(async (req, res) => {
           { upsert: true }
         );
       }
+
+      try {
+        await sendPixelPageView({ client_ref: doc.client_ref, server_ip });
+        await sendMetaContactFromSession(doc, server_ip);
+      } catch (_) {}
 
       console.log('[track] event_id=', body.event_id, 'client_ref=', doc.client_ref, 'click_number=', click_number);
       console.log('[track] message=', doc.message);
