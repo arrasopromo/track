@@ -4,6 +4,6 @@ window.TRACK_CONFIG = {
   defaultMessage: 'Tenho interesse em saber mais sobre os serviços |',
   appendUtmToMessage: true,
   autoRedirectOnLoad: true,
-  autoRedirectDelayMs: 2000,
+  autoRedirectDelayMs: 0,
   pixelId: '1019661457030791'
 };

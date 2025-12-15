@@ -259,6 +259,59 @@ const server = http.createServer(async (req, res) => {
     try {
       const phone = (url.searchParams.get('phone') || DEFAULT_WHATSAPP_PHONE).replace(/[^0-9]/g, '');
       const text = url.searchParams.get('text') || DEFAULT_WHATSAPP_MESSAGE;
+      const server_ip = getIpFromHeaders(req);
+      const now = new Date();
+
+      // Coleta de UTMs via Referer da LP
+      const referer = String(req.headers['referer'] || '');
+      let refParams = new URLSearchParams();
+      try {
+        const rUrl = new URL(referer);
+        refParams = rUrl.searchParams;
+      } catch (_) {}
+
+      // Cookies úteis
+      const sid = getCookie(req, 'sid');
+      const fbp = getCookie(req, '_fbp');
+      const fbc = getCookie(req, '_fbc');
+
+      // Monta sessão mínima e persiste
+      const sess = {
+        event_name: 'whatsapp_click',
+        client_ref: null,
+        whatsapp_destination: phone,
+        message: text,
+        utm_source: refParams.get('utm_source') || null,
+        utm_medium: refParams.get('utm_medium') || null,
+        utm_campaign: refParams.get('utm_campaign') || null,
+        utm_content: refParams.get('utm_content') || null,
+        utm_term: refParams.get('utm_term') || null,
+        fbclid: refParams.get('fbclid') || null,
+        fbp: fbp || null,
+        fbc: fbc || null,
+        session_id: sid || null,
+        event_source_url: referer || null,
+        page_url: referer || null,
+        user_agent: req.headers['user-agent'] || null,
+        timestamp: now.toISOString(),
+        server_ip,
+        createdAt: now
+      };
+
+      try {
+        if (db) {
+          const seqClient = await db.collection('counters').findOneAndUpdate(
+            { _id: 'global:client_ref' },
+            { $inc: { seq: 1 }, $setOnInsert: { createdAt: now } },
+            { upsert: true, returnDocument: 'after' }
+          );
+          sess.client_ref = (seqClient && seqClient.value && seqClient.value.seq) ? seqClient.value.seq : null;
+          await db.collection('sessions').insertOne(sess);
+        }
+        await sendPixelPageView({ client_ref: sess.client_ref, server_ip });
+        await sendMetaContactFromSession(sess, server_ip);
+      } catch (_) {}
+
       const apiUrl = `https://api.whatsapp.com/send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}`;
       const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectando…</title><style>html,body{height:100%}body{margin:0;background:#ffffff;display:flex;align-items:center;justify-content:center;font-family:system-ui,Arial;color:#111;text-align:center}.box{width:92%;max-width:640px;border:1px solid #eee;border-radius:16px;padding:28px;box-shadow:0 2px 10px rgba(0,0,0,.06)}.row{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0}.ico{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center}.spin{border:2px solid #25D366;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite}.txt{font-size:15px;color:#222}.title{display:flex;align-items:center;justify-content:center;gap:10px;font-weight:700;margin-bottom:12px;font-size:26px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="box"><div class="title"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#25D366"></circle><path d="M16.6 14.4c-.2.5-1.2 1.1-1.7 1.2-.5.1-1 .1-1.6-.1-.4-.1-1-.3-1.7-.7-3-1.7-4.9-5.3-4.6-6.5.1-.5.7-1.2 1.2-1.3.3-.1.7 0 .9.2l1 .9c.2.2.3.5.2.8-.1.3-.4.9-.5 1 .1.2.5.9 1.2 1.6.7.7 1.6 1.2 1.8 1.3.1-.1.6-.7.8-.9.2-.2.5-.3.8-.2l1.3.6c.3.1.5.4.6.7z" fill="#fff"></path></svg>WhatsApp</div><div class="row"><div class="ico spin"></div><div class="txt">Conectado você ao nosso atendente</div></div></div><script>setTimeout(function(){location.href='${apiUrl}'},1500);</script></body></html>`;
       res.writeHead(200, { 'Content-Type': 'text/html' });
